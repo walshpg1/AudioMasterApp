@@ -1,0 +1,11 @@
+{
+  "name": "Demo Loud -10 LUFS",
+  "slug": "demo_loud",
+  "target_lufs": -10.0,
+  "true_peak_ceiling": -1.0,
+  "compress": true,
+  "compress_ratio": 2.0,
+  "compress_threshold_db": -18.0,
+  "compress_attack_ms": 20,
+  "compress_release_ms": 200
+}
