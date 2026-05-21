@@ -13,22 +13,6 @@ from mastering_engine import master, list_presets
 from resolve_bridge import connect as resolve_connect, import_to_media_pool, BridgeResult
 
 # ---------------------------------------------------------------------------
-# Logging setup
-# ---------------------------------------------------------------------------
-_LOG_DIR = Path(__file__).parent / "logs"
-_LOG_DIR.mkdir(exist_ok=True)
-
-_handler = logging.handlers.RotatingFileHandler(
-    _LOG_DIR / "audiomasterapp.log", maxBytes=5 * 1024 * 1024, backupCount=3,
-    encoding="utf-8",
-)
-logging.basicConfig(
-    handlers=[_handler],
-    level=logging.DEBUG,
-    format="%(asctime)s %(name)-20s %(levelname)-8s %(message)s",
-)
-
-# ---------------------------------------------------------------------------
 # Theme
 # ---------------------------------------------------------------------------
 ctk.set_appearance_mode("dark")
@@ -126,7 +110,10 @@ class App(ctk.CTk):
         self._resolve_dot = ctk.CTkLabel(resolve_row, text="●", text_color="gray", width=20)
         self._resolve_dot.pack(side="left")
         self._resolve_status_lbl = ctk.CTkLabel(resolve_row, text="Checking...", anchor="w")
-        self._resolve_status_lbl.pack(side="left")
+        self._resolve_status_lbl.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(
+            resolve_row, text="Refresh", command=self._refresh_resolve, width=80
+        ).pack(side="right", padx=(0, 4))
         self._resolve_btn = ctk.CTkButton(
             resolve_frame,
             text="Send to Resolve Media Pool",
@@ -250,6 +237,13 @@ class App(ctk.CTk):
             self._resolve_dot.configure(text_color="#F44336")
             self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
 
+    def _refresh_resolve(self) -> None:
+        self._resolve_dot.configure(text_color="gray")
+        self._resolve_status_lbl.configure(text="Checking...")
+        self._resolve_connected = False
+        self._resolve_btn.configure(state="disabled")
+        threading.Thread(target=self._resolve_check_worker, daemon=True).start()
+
     def _send_to_resolve(self) -> None:
         if not self._last_output_path:
             self._set_status("Master a file first.", "warning")
@@ -278,5 +272,16 @@ class App(ctk.CTk):
 
 
 if __name__ == "__main__":
+    _LOG_DIR = Path(__file__).parent / "logs"
+    _LOG_DIR.mkdir(exist_ok=True)
+    _handler = logging.handlers.RotatingFileHandler(
+        _LOG_DIR / "audiomasterapp.log", maxBytes=5 * 1024 * 1024, backupCount=3,
+        encoding="utf-8",
+    )
+    logging.basicConfig(
+        handlers=[_handler],
+        level=logging.DEBUG,
+        format="%(asctime)s %(name)-20s %(levelname)-8s %(message)s",
+    )
     app = App()
     app.mainloop()

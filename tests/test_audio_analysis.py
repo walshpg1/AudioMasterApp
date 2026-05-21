@@ -71,3 +71,16 @@ def test_subtype_to_bitdepth_float():
 def test_subtype_to_bitdepth_unknown():
     result = _subtype_to_bitdepth("VORBIS")
     assert result == "VORBIS"
+
+
+def test_analyse_silent_wav_returns_no_error(silent_wav):
+    result = analyse(silent_wav)
+    assert result.error is None
+
+
+def test_analyse_silent_wav_lufs_is_handled(silent_wav):
+    import math
+    result = analyse(silent_wav)
+    # Silent audio produces -inf LUFS from pyloudnorm; the function must not crash
+    assert result.error is None
+    assert isinstance(result.integrated_lufs, float)

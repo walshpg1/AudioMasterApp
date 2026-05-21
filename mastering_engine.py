@@ -135,10 +135,17 @@ def master(input_path: str, preset: dict) -> MasterResult:
 
 def _parse_loudnorm_json(stderr: str) -> dict | None:
     start = stderr.rfind("{")
-    end = stderr.rfind("}") + 1
-    if start == -1 or end <= start:
+    if start == -1:
         return None
-    try:
-        return json.loads(stderr[start:end])
-    except json.JSONDecodeError:
-        return None
+    depth = 0
+    for i, ch in enumerate(stderr[start:], start=start):
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(stderr[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
