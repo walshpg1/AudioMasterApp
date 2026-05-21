@@ -106,7 +106,6 @@ class App(ctk.CTk):
         self._play_btn = ctk.CTkButton(
             play_frame, text="▶  Play Mastered File",
             command=self._play_output, state="disabled",
-            fg_color="#1DB954", hover_color="#17a349", text_color="white",
         )
         self._play_btn.pack(fill="x")
 
