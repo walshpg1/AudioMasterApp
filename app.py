@@ -2,6 +2,7 @@ from __future__ import annotations
 import logging
 import logging.handlers
 import math
+import os
 import threading
 from pathlib import Path
 from tkinter import filedialog
@@ -98,6 +99,16 @@ class App(ctk.CTk):
             btn_frame, text="Master File", command=self._run_master, width=220, state="disabled"
         )
         self._master_btn.pack(side="left")
+
+        # Play button
+        play_frame = ctk.CTkFrame(self, fg_color="transparent")
+        play_frame.pack(fill="x", padx=16, pady=(0, 4))
+        self._play_btn = ctk.CTkButton(
+            play_frame, text="▶  Play Mastered File",
+            command=self._play_output, state="disabled",
+            fg_color="#1DB954", hover_color="#17a349", text_color="white",
+        )
+        self._play_btn.pack(fill="x")
 
         # Resolve bridge panel (always visible, status reflects connection)
         resolve_frame = ctk.CTkFrame(self)
@@ -217,8 +228,15 @@ class App(ctk.CTk):
         self._last_output_path = result.output_path
         output_name = Path(result.output_path).name
         self._set_status(f"Done!  →  output/{output_name}", "success")
+        self._play_btn.configure(state="normal")
         if self._resolve_connected:
             self._resolve_btn.configure(state="normal")
+
+    def _play_output(self) -> None:
+        if self._last_output_path and Path(self._last_output_path).exists():
+            os.startfile(self._last_output_path)
+        else:
+            self._set_status("Mastered file not found.", "warning")
 
     # ------------------------------------------------------------------
     # Resolve bridge
