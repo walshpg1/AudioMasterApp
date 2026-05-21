@@ -58,6 +58,9 @@ class App(ctk.CTk):
         ).pack(side="left", padx=8, pady=8)
         self._file_label = ctk.CTkLabel(file_frame, text="No file selected", anchor="w")
         self._file_label.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ctk.CTkButton(
+            file_frame, text="Reset", command=self._reset, width=70
+        ).pack(side="right", padx=(0, 8), pady=8)
 
         # Preset dropdown
         preset_frame = ctk.CTkFrame(self)
@@ -158,6 +161,17 @@ class App(ctk.CTk):
             self._file_label.configure(text=Path(path).name)
             self._master_btn.configure(state="normal")
             self._set_status("File selected. Click Analyse to inspect it.", "normal")
+
+    def _reset(self) -> None:
+        self._wav_path = None
+        self._last_output_path = None
+        self._file_label.configure(text="No file selected")
+        self._master_btn.configure(state="disabled")
+        self._play_btn.configure(state="disabled")
+        self._progress.set(0)
+        for lbl in self._analysis_labels.values():
+            lbl.configure(text="—")
+        self._set_status("Ready", "normal")
 
     # ------------------------------------------------------------------
     # Analysis
