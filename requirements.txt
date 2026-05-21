@@ -1,0 +1,5 @@
+customtkinter>=5.2.0
+soundfile>=0.12.1
+numpy>=1.26.0
+pyloudnorm>=0.1.1
+pytest>=8.0.0
