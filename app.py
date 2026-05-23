@@ -171,6 +171,7 @@ class App(ctk.CTk):
         self._progress.set(0)
         for lbl in self._analysis_labels.values():
             lbl.configure(text="—")
+        self._analysis_labels["Integrated LUFS"].configure(text="—")
         self._set_status("Ready", "normal")
 
     # ------------------------------------------------------------------
@@ -229,10 +230,16 @@ class App(ctk.CTk):
     def _master_worker(self, preset: dict) -> None:
         self.after(0, lambda: self._progress.set(0.35))
         result = master(self._wav_path, preset)
+        self.after(0, lambda: self._progress.set(0.85))
+        mastered_lufs: float | None = None
+        if result.output_path and not result.error:
+            mastered_analysis = analyse(result.output_path)
+            if not mastered_analysis.error:
+                mastered_lufs = mastered_analysis.integrated_lufs
         self.after(0, lambda: self._progress.set(0.95))
-        self.after(0, self._on_master_done, result)
+        self.after(0, self._on_master_done, result, mastered_lufs)
 
-    def _on_master_done(self, result) -> None:
+    def _on_master_done(self, result, mastered_lufs: float | None) -> None:
         self._progress.set(1.0)
         self._master_btn.configure(state="normal")
         if result.error:
@@ -242,6 +249,12 @@ class App(ctk.CTk):
         output_name = Path(result.output_path).name
         self._set_status(f"Done!  →  output/{output_name}", "success")
         self._play_btn.configure(state="normal")
+        if mastered_lufs is not None and result.pass1_lufs is not None:
+            before = f"{result.pass1_lufs:.1f}"
+            after = f"{mastered_lufs:.1f}" if math.isfinite(mastered_lufs) else "< −70"
+            self._analysis_labels["Integrated LUFS"].configure(
+                text=f"{before}  →  {after} LUFS"
+            )
         if self._resolve_connected:
             self._resolve_btn.configure(state="normal")
 
