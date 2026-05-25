@@ -62,11 +62,13 @@ def master(
     input_path: str,
     preset: dict,
     export_fmt: ExportFormat | None = None,
+    output_dir: Path | str | None = None,
 ) -> MasterResult:
     if export_fmt is None:
         export_fmt = DEFAULT_FORMAT
 
     input_path = Path(input_path)
+    effective_output_dir = Path(output_dir) if output_dir else OUTPUT_DIR
     preset_name = preset["name"]
     slug = preset["slug"]
     target_lufs = preset["target_lufs"]
@@ -80,9 +82,9 @@ def master(
             error=f"Input file does not exist: {input_path}",
         )
 
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    effective_output_dir.mkdir(parents=True, exist_ok=True)
     output_path = (
-        OUTPUT_DIR
+        effective_output_dir
         / f"{input_path.stem}_mastered_{slug}_{export_fmt.slug}.{export_fmt.extension}"
     )
 

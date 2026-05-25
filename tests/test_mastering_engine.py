@@ -245,3 +245,11 @@ def test_master_format_slug_in_output_filename(test_wav):
     fmt = get_export_format("mp3_320")
     result = master(test_wav, preset, fmt)
     assert "mp3_320" in Path(result.output_path).name
+
+
+def test_master_custom_output_dir(test_wav, tmp_path):
+    preset = load_preset("streaming_master")
+    result = master(test_wav, preset, output_dir=tmp_path)
+    assert result.error is None, result.error
+    assert Path(result.output_path).parent.resolve() == tmp_path.resolve()
+    assert Path(result.output_path).exists()

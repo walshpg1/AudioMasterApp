@@ -3,12 +3,14 @@ import logging
 import logging.handlers
 import math
 import os
+import re
 import threading
 from pathlib import Path
-from tkinter import filedialog
+from tkinter import filedialog, IntVar
 
 import customtkinter as ctk
 
+import settings_manager
 from audio_analysis import analyse, AnalysisResult
 from export_formats import list_export_formats, ExportFormat
 from mastering_engine import master, list_presets
@@ -27,23 +29,39 @@ _STATUS_COLOURS = {
     "error": ("#F44336", "#C62828"),
 }
 
+_GEOMETRY_RE = re.compile(r"^\d+x\d+[+-]\d+[+-]\d+$")
+
+_DEFAULT_OUTPUT_DIR = Path(__file__).parent / "output"
+
 
 class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioMasterApp")
-        self.geometry("520x720")
+        self.geometry("520x860")
         self.resizable(False, False)
 
+        self._loading = True
         self._wav_path: str | None = None
         self._last_output_path: str | None = None
         self._resolve_connected: bool = False
+        self._output_dir: Path = _DEFAULT_OUTPUT_DIR
+        self._settings: dict = settings_manager._defaults()
+
         self._presets = list_presets()
         self._preset_map = {p["name"]: p for p in self._presets}
         self._export_formats = list_export_formats()
         self._format_map = {f.name: f for f in self._export_formats}
 
+        # Checkbox variables must exist before _build_ui references them
+        self._auto_report_var = IntVar(value=0)
+        self._resolve_auto_var = IntVar(value=0)
+
         self._build_ui()
+        self._load_settings()
+        self._loading = False
+
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
         threading.Thread(target=self._resolve_check_worker, daemon=True).start()
 
     # ------------------------------------------------------------------
@@ -51,9 +69,9 @@ class App(ctk.CTk):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        pad = {"padx": 16, "pady": 6}
+        pad = {"padx": 16, "pady": 5}
 
-        # File selector
+        # --- File selector ---
         file_frame = ctk.CTkFrame(self)
         file_frame.pack(fill="x", **pad)
         ctk.CTkButton(
@@ -65,7 +83,7 @@ class App(ctk.CTk):
             file_frame, text="Reset", command=self._reset, width=70
         ).pack(side="right", padx=(0, 8), pady=8)
 
-        # Preset dropdown
+        # --- Preset dropdown ---
         preset_frame = ctk.CTkFrame(self)
         preset_frame.pack(fill="x", **pad)
         ctk.CTkLabel(preset_frame, text="Preset:", width=60).pack(side="left", padx=8, pady=8)
@@ -78,7 +96,7 @@ class App(ctk.CTk):
             width=300,
         ).pack(side="left", padx=8, pady=8)
 
-        # Export format dropdown
+        # --- Export format dropdown ---
         format_frame = ctk.CTkFrame(self)
         format_frame.pack(fill="x", **pad)
         ctk.CTkLabel(format_frame, text="Format:", width=60).pack(side="left", padx=8, pady=8)
@@ -87,10 +105,28 @@ class App(ctk.CTk):
             format_frame,
             variable=self._format_var,
             values=[f.name for f in self._export_formats],
+            command=self._on_format_change,
             width=300,
         ).pack(side="left", padx=8, pady=8)
 
-        # Analysis panel
+        # --- Output folder selector ---
+        output_frame = ctk.CTkFrame(self)
+        output_frame.pack(fill="x", **pad)
+        ctk.CTkButton(
+            output_frame, text="Output Folder...", command=self._select_output_folder, width=130
+        ).pack(side="left", padx=8, pady=8)
+        self._output_folder_label = ctk.CTkLabel(
+            output_frame,
+            text=str(_DEFAULT_OUTPUT_DIR),
+            anchor="w",
+            font=ctk.CTkFont(size=11),
+        )
+        self._output_folder_label.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        ctk.CTkButton(
+            output_frame, text="Open", command=self._open_output_folder, width=55
+        ).pack(side="right", padx=(0, 8), pady=8)
+
+        # --- Analysis panel ---
         analysis_frame = ctk.CTkFrame(self)
         analysis_frame.pack(fill="x", **pad)
         ctk.CTkLabel(
@@ -108,7 +144,23 @@ class App(ctk.CTk):
             lbl.pack(side="left")
             self._analysis_labels[field] = lbl
 
-        # Action buttons
+        # --- Options panel ---
+        options_frame = ctk.CTkFrame(self)
+        options_frame.pack(fill="x", **pad)
+        ctk.CTkCheckBox(
+            options_frame,
+            text="Auto-generate loudness report after mastering",
+            variable=self._auto_report_var,
+            command=self._on_auto_report_change,
+        ).pack(anchor="w", padx=12, pady=(8, 4))
+        ctk.CTkCheckBox(
+            options_frame,
+            text="Send to Resolve automatically after mastering",
+            variable=self._resolve_auto_var,
+            command=self._on_resolve_auto_change,
+        ).pack(anchor="w", padx=12, pady=(0, 8))
+
+        # --- Action buttons ---
         btn_frame = ctk.CTkFrame(self, fg_color="transparent")
         btn_frame.pack(fill="x", padx=16, pady=4)
         ctk.CTkButton(
@@ -119,7 +171,7 @@ class App(ctk.CTk):
         )
         self._master_btn.pack(side="left")
 
-        # Play button
+        # --- Play button ---
         play_frame = ctk.CTkFrame(self, fg_color="transparent")
         play_frame.pack(fill="x", padx=16, pady=(0, 4))
         self._play_btn = ctk.CTkButton(
@@ -128,7 +180,7 @@ class App(ctk.CTk):
         )
         self._play_btn.pack(fill="x")
 
-        # Resolve bridge panel
+        # --- Resolve bridge panel ---
         resolve_frame = ctk.CTkFrame(self)
         resolve_frame.pack(fill="x", **pad)
         ctk.CTkLabel(
@@ -145,27 +197,77 @@ class App(ctk.CTk):
         ).pack(side="right", padx=(0, 4))
         self._resolve_btn = ctk.CTkButton(
             resolve_frame,
-            text="Open Output Folder",
-            command=self._resolve_btn_action,
+            text="Send to Resolve Media Pool",
+            command=self._send_to_resolve,
+            state="disabled",
         )
         self._resolve_btn.pack(padx=12, pady=(0, 8))
 
-        # Progress bar
+        # --- Progress bar ---
         self._progress = ctk.CTkProgressBar(self)
         self._progress.pack(fill="x", padx=16, pady=4)
         self._progress.set(0)
 
-        # Status bar
+        # --- Status bar ---
         self._status_lbl = ctk.CTkLabel(self, text="Ready", anchor="w")
-        self._status_lbl.pack(fill="x", padx=16, pady=(4, 12))
+        self._status_lbl.pack(fill="x", padx=16, pady=(4, 10))
+
+    # ------------------------------------------------------------------
+    # Settings persistence
+    # ------------------------------------------------------------------
+
+    def _load_settings(self) -> None:
+        preset_names = [p["name"] for p in self._presets]
+        self._settings = settings_manager.load(preset_names)
+
+        # Restore preset selection
+        stored_preset = self._settings.get("last_selected_preset")
+        if stored_preset and stored_preset in self._preset_map:
+            self._preset_var.set(stored_preset)
+
+        # Restore export format selection
+        stored_format = self._settings.get("last_selected_export_format")
+        if stored_format and stored_format in self._format_map:
+            self._format_var.set(stored_format)
+
+        # Restore output folder
+        stored_output = self._settings.get("last_output_folder")
+        if stored_output:
+            p = Path(stored_output)
+            if p.is_dir():
+                self._output_dir = p
+                self._output_folder_label.configure(text=str(p))
+
+        # Restore checkboxes
+        self._auto_report_var.set(1 if self._settings.get("auto_generate_report") else 0)
+        self._resolve_auto_var.set(1 if self._settings.get("resolve_import_enabled") else 0)
+
+        # Restore window position (size is fixed; only apply position part)
+        geo = self._settings.get("window_geometry")
+        if geo and _GEOMETRY_RE.match(geo):
+            try:
+                self.geometry(geo)
+            except Exception:
+                pass
+
+    def _save_settings(self) -> None:
+        if not self._loading:
+            settings_manager.save(self._settings)
+
+    def _on_close(self) -> None:
+        self._settings["window_geometry"] = self.geometry()
+        settings_manager.save(self._settings)
+        self.destroy()
 
     # ------------------------------------------------------------------
     # File selection
     # ------------------------------------------------------------------
 
     def _select_file(self) -> None:
+        initial_dir = self._settings.get("last_input_folder") or str(Path.home())
         path = filedialog.askopenfilename(
             title="Select WAV file",
+            initialdir=initial_dir,
             filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
         )
         if path:
@@ -176,6 +278,9 @@ class App(ctk.CTk):
             self._file_label.configure(text=Path(path).name)
             self._master_btn.configure(state="normal")
             self._set_status("File selected. Click Analyse to inspect it.", "normal")
+            self._settings["last_input_file"] = path
+            self._settings["last_input_folder"] = str(Path(path).parent)
+            self._save_settings()
 
     def _reset(self) -> None:
         self._wav_path = None
@@ -183,13 +288,31 @@ class App(ctk.CTk):
         self._file_label.configure(text="No file selected")
         self._master_btn.configure(state="disabled")
         self._play_btn.configure(state="disabled")
+        self._resolve_btn.configure(state="disabled")
         self._progress.set(0)
         for lbl in self._analysis_labels.values():
             lbl.configure(text="—")
         self._set_status("Ready", "normal")
 
     # ------------------------------------------------------------------
-    # Preset change
+    # Output folder
+    # ------------------------------------------------------------------
+
+    def _select_output_folder(self) -> None:
+        initial = str(self._output_dir)
+        folder = filedialog.askdirectory(title="Select output folder", initialdir=initial)
+        if folder:
+            self._output_dir = Path(folder)
+            self._output_folder_label.configure(text=folder)
+            self._settings["last_output_folder"] = folder
+            self._save_settings()
+
+    def _open_output_folder(self) -> None:
+        self._output_dir.mkdir(parents=True, exist_ok=True)
+        os.startfile(str(self._output_dir))
+
+    # ------------------------------------------------------------------
+    # Preset / format change
     # ------------------------------------------------------------------
 
     def _on_preset_change(self, name: str) -> None:
@@ -200,6 +323,24 @@ class App(ctk.CTk):
             self._set_status(f"Note: {short}", "warning")
         elif self._status_lbl.cget("text").startswith("Note:"):
             self._set_status("Ready", "normal")
+        self._settings["last_selected_preset"] = name
+        self._save_settings()
+
+    def _on_format_change(self, name: str) -> None:
+        self._settings["last_selected_export_format"] = name
+        self._save_settings()
+
+    # ------------------------------------------------------------------
+    # Options checkboxes
+    # ------------------------------------------------------------------
+
+    def _on_auto_report_change(self) -> None:
+        self._settings["auto_generate_report"] = bool(self._auto_report_var.get())
+        self._save_settings()
+
+    def _on_resolve_auto_change(self) -> None:
+        self._settings["resolve_import_enabled"] = bool(self._resolve_auto_var.get())
+        self._save_settings()
 
     # ------------------------------------------------------------------
     # Analysis
@@ -260,7 +401,7 @@ class App(ctk.CTk):
 
     def _master_worker(self, preset: dict, export_fmt: ExportFormat) -> None:
         self.after(0, lambda: self._progress.set(0.35))
-        result = master(self._wav_path, preset, export_fmt)
+        result = master(self._wav_path, preset, export_fmt, self._output_dir)
         self.after(0, lambda: self._progress.set(0.85))
         mastered_lufs: float | None = None
         if result.output_path and not result.error:
@@ -278,14 +419,19 @@ class App(ctk.CTk):
             return
         self._last_output_path = result.output_path
         output_name = Path(result.output_path).name
-        self._set_status(f"Done!  →  output/{output_name}", "success")
+        self._set_status(f"Done!  →  {output_name}", "success")
         self._play_btn.configure(state="normal")
+        if self._resolve_connected:
+            self._resolve_btn.configure(state="normal")
         if mastered_lufs is not None and result.pass1_lufs is not None:
             before = f"{result.pass1_lufs:.1f}"
             after = f"{mastered_lufs:.1f}" if math.isfinite(mastered_lufs) else "< −70"
             self._analysis_labels["Integrated LUFS"].configure(
                 text=f"{before}  →  {after} LUFS"
             )
+        # Auto-send to Resolve if enabled
+        if self._settings.get("resolve_import_enabled") and self._resolve_connected:
+            threading.Thread(target=self._resolve_import_worker, daemon=True).start()
 
     def _play_output(self) -> None:
         if self._last_output_path and Path(self._last_output_path).exists():
@@ -303,28 +449,21 @@ class App(ctk.CTk):
 
     def _on_resolve_check(self, connected: bool, msg: str) -> None:
         self._resolve_connected = connected
-        if connected:
-            self._resolve_dot.configure(text_color="#4CAF50")
-            self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
-            self._resolve_btn.configure(text="Send to Resolve Media Pool")
+        dot_colour = "#4CAF50" if connected else "#F44336"
+        self._resolve_dot.configure(text_color=dot_colour)
+        self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
+        # Enable Send button only when connected and a mastered file exists
+        if connected and self._last_output_path:
+            self._resolve_btn.configure(state="normal")
         else:
-            self._resolve_dot.configure(text_color="#F44336")
-            self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
-            self._resolve_btn.configure(text="Open Output Folder")
+            self._resolve_btn.configure(state="disabled")
 
     def _refresh_resolve(self) -> None:
         self._resolve_dot.configure(text_color="gray")
         self._resolve_status_lbl.configure(text="Checking...")
         self._resolve_connected = False
+        self._resolve_btn.configure(state="disabled")
         threading.Thread(target=self._resolve_check_worker, daemon=True).start()
-
-    def _resolve_btn_action(self) -> None:
-        if self._resolve_connected:
-            self._send_to_resolve()
-        else:
-            output_dir = Path(__file__).parent / "output"
-            output_dir.mkdir(exist_ok=True)
-            os.startfile(str(output_dir))
 
     def _send_to_resolve(self) -> None:
         if not self._last_output_path:
@@ -339,7 +478,7 @@ class App(ctk.CTk):
         self.after(0, self._on_resolve_import_done, result)
 
     def _on_resolve_import_done(self, result: BridgeResult) -> None:
-        self._resolve_btn.configure(state="normal")
+        self._resolve_btn.configure(state="normal" if self._resolve_connected else "disabled")
         level = "success" if result.clip_imported else "error"
         self._set_status(f"Resolve: {result.message}", level)
 
