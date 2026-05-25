@@ -1,6 +1,7 @@
 {
   "name": "TikTok/YouTube Loud -12 LUFS",
   "slug": "tiktok_youtube_loud",
+  "sort_order": 20,
   "target_lufs": -12.0,
   "true_peak_ceiling": -1.0,
   "compress": true,

@@ -1,0 +1,13 @@
+{
+  "name": "Vinyl Pre-Master -18 LUFS",
+  "slug": "vinyl_premaster",
+  "sort_order": 80,
+  "target_lufs": -18.0,
+  "true_peak_ceiling": -3.0,
+  "compress": false,
+  "compress_ratio": 2.0,
+  "compress_threshold_db": -18.0,
+  "compress_attack_ms": 20,
+  "compress_release_ms": 200,
+  "warning": "Vinyl mastering requires a professional mastering engineer for RIAA EQ, stereo width control, and cutting-level decisions. This preset handles level alignment only."
+}

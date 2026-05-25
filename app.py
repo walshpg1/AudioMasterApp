@@ -10,6 +10,7 @@ from tkinter import filedialog
 import customtkinter as ctk
 
 from audio_analysis import analyse, AnalysisResult
+from export_formats import list_export_formats, ExportFormat
 from mastering_engine import master, list_presets
 from resolve_bridge import connect as resolve_connect, import_to_media_pool, BridgeResult
 
@@ -31,7 +32,7 @@ class App(ctk.CTk):
     def __init__(self) -> None:
         super().__init__()
         self.title("AudioMasterApp")
-        self.geometry("520x660")
+        self.geometry("520x720")
         self.resizable(False, False)
 
         self._wav_path: str | None = None
@@ -39,6 +40,8 @@ class App(ctk.CTk):
         self._resolve_connected: bool = False
         self._presets = list_presets()
         self._preset_map = {p["name"]: p for p in self._presets}
+        self._export_formats = list_export_formats()
+        self._format_map = {f.name: f for f in self._export_formats}
 
         self._build_ui()
         threading.Thread(target=self._resolve_check_worker, daemon=True).start()
@@ -71,6 +74,19 @@ class App(ctk.CTk):
             preset_frame,
             variable=self._preset_var,
             values=[p["name"] for p in self._presets],
+            command=self._on_preset_change,
+            width=300,
+        ).pack(side="left", padx=8, pady=8)
+
+        # Export format dropdown
+        format_frame = ctk.CTkFrame(self)
+        format_frame.pack(fill="x", **pad)
+        ctk.CTkLabel(format_frame, text="Format:", width=60).pack(side="left", padx=8, pady=8)
+        self._format_var = ctk.StringVar(value=self._export_formats[0].name)
+        ctk.CTkOptionMenu(
+            format_frame,
+            variable=self._format_var,
+            values=[f.name for f in self._export_formats],
             width=300,
         ).pack(side="left", padx=8, pady=8)
 
@@ -112,7 +128,7 @@ class App(ctk.CTk):
         )
         self._play_btn.pack(fill="x")
 
-        # Resolve bridge panel (always visible, status reflects connection)
+        # Resolve bridge panel
         resolve_frame = ctk.CTkFrame(self)
         resolve_frame.pack(fill="x", **pad)
         ctk.CTkLabel(
@@ -129,9 +145,8 @@ class App(ctk.CTk):
         ).pack(side="right", padx=(0, 4))
         self._resolve_btn = ctk.CTkButton(
             resolve_frame,
-            text="Send to Resolve Media Pool",
-            command=self._send_to_resolve,
-            state="disabled",
+            text="Open Output Folder",
+            command=self._resolve_btn_action,
         )
         self._resolve_btn.pack(padx=12, pady=(0, 8))
 
@@ -171,8 +186,20 @@ class App(ctk.CTk):
         self._progress.set(0)
         for lbl in self._analysis_labels.values():
             lbl.configure(text="—")
-        self._analysis_labels["Integrated LUFS"].configure(text="—")
         self._set_status("Ready", "normal")
+
+    # ------------------------------------------------------------------
+    # Preset change
+    # ------------------------------------------------------------------
+
+    def _on_preset_change(self, name: str) -> None:
+        preset = self._preset_map.get(name, {})
+        warning = preset.get("warning")
+        if warning:
+            short = warning[:100] + "…" if len(warning) > 100 else warning
+            self._set_status(f"Note: {short}", "warning")
+        elif self._status_lbl.cget("text").startswith("Note:"):
+            self._set_status("Ready", "normal")
 
     # ------------------------------------------------------------------
     # Analysis
@@ -221,15 +248,19 @@ class App(ctk.CTk):
             return
         preset_name = self._preset_var.get()
         preset = self._preset_map[preset_name]
-        self._set_status(f"Mastering — Pass 1 (measuring)…", "normal")
+        format_name = self._format_var.get()
+        export_fmt = self._format_map[format_name]
+        self._set_status("Mastering — Pass 1 (measuring)…", "normal")
         self._progress.configure(mode="determinate")
         self._progress.set(0.05)
         self._master_btn.configure(state="disabled")
-        threading.Thread(target=self._master_worker, args=(preset,), daemon=True).start()
+        threading.Thread(
+            target=self._master_worker, args=(preset, export_fmt), daemon=True
+        ).start()
 
-    def _master_worker(self, preset: dict) -> None:
+    def _master_worker(self, preset: dict, export_fmt: ExportFormat) -> None:
         self.after(0, lambda: self._progress.set(0.35))
-        result = master(self._wav_path, preset)
+        result = master(self._wav_path, preset, export_fmt)
         self.after(0, lambda: self._progress.set(0.85))
         mastered_lufs: float | None = None
         if result.output_path and not result.error:
@@ -255,8 +286,6 @@ class App(ctk.CTk):
             self._analysis_labels["Integrated LUFS"].configure(
                 text=f"{before}  →  {after} LUFS"
             )
-        if self._resolve_connected:
-            self._resolve_btn.configure(state="normal")
 
     def _play_output(self) -> None:
         if self._last_output_path and Path(self._last_output_path).exists():
@@ -277,16 +306,25 @@ class App(ctk.CTk):
         if connected:
             self._resolve_dot.configure(text_color="#4CAF50")
             self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
+            self._resolve_btn.configure(text="Send to Resolve Media Pool")
         else:
             self._resolve_dot.configure(text_color="#F44336")
             self._resolve_status_lbl.configure(text=f"Resolve: {msg}")
+            self._resolve_btn.configure(text="Open Output Folder")
 
     def _refresh_resolve(self) -> None:
         self._resolve_dot.configure(text_color="gray")
         self._resolve_status_lbl.configure(text="Checking...")
         self._resolve_connected = False
-        self._resolve_btn.configure(state="disabled")
         threading.Thread(target=self._resolve_check_worker, daemon=True).start()
+
+    def _resolve_btn_action(self) -> None:
+        if self._resolve_connected:
+            self._send_to_resolve()
+        else:
+            output_dir = Path(__file__).parent / "output"
+            output_dir.mkdir(exist_ok=True)
+            os.startfile(str(output_dir))
 
     def _send_to_resolve(self) -> None:
         if not self._last_output_path:

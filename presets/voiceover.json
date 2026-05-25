@@ -1,6 +1,7 @@
 {
   "name": "Voiceover -16 LUFS",
   "slug": "voiceover",
+  "sort_order": 30,
   "target_lufs": -16.0,
   "true_peak_ceiling": -1.0,
   "compress": false,

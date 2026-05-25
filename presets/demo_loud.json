@@ -1,6 +1,7 @@
 {
   "name": "Demo Loud -10 LUFS",
   "slug": "demo_loud",
+  "sort_order": 40,
   "target_lufs": -10.0,
   "true_peak_ceiling": -1.0,
   "compress": true,

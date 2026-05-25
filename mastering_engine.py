@@ -6,12 +6,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+from export_formats import ExportFormat, DEFAULT_FORMAT
+
 logger = logging.getLogger(__name__)
 
 PRESETS_DIR = Path(__file__).parent / "presets"
 OUTPUT_DIR = Path(__file__).parent / "output"
 
-PRESET_ORDER = ["streaming_master", "tiktok_youtube_loud", "voiceover", "demo_loud"]
+REQUIRED_PRESET_FIELDS = {"name", "slug", "target_lufs", "true_peak_ceiling", "compress"}
 
 
 @dataclass
@@ -22,6 +24,16 @@ class MasterResult:
     error: Optional[str] = None
 
 
+def validate_preset(data: dict) -> str | None:
+    """Return an error description if data is not a valid preset, None if valid."""
+    missing = REQUIRED_PRESET_FIELDS - data.keys()
+    if missing:
+        return f"Missing required fields: {', '.join(sorted(missing))}"
+    if not isinstance(data.get("compress"), bool):
+        return "Field 'compress' must be a boolean"
+    return None
+
+
 def load_preset(slug: str) -> dict:
     path = PRESETS_DIR / f"{slug}.json"
     with open(path, encoding="utf-8") as f:
@@ -29,35 +41,52 @@ def load_preset(slug: str) -> dict:
 
 
 def list_presets() -> list[dict]:
-    result = []
-    for slug in PRESET_ORDER:
-        path = PRESETS_DIR / f"{slug}.json"
-        if path.exists():
+    """Load all valid presets from presets/, sorted by sort_order then name."""
+    presets = []
+    for path in sorted(PRESETS_DIR.glob("*.json")):
+        try:
             with open(path, encoding="utf-8") as f:
-                result.append(json.load(f))
-    return result
+                data = json.load(f)
+            error = validate_preset(data)
+            if error:
+                logger.warning("Skipping preset %s: %s", path.name, error)
+                continue
+            presets.append(data)
+        except Exception as exc:
+            logger.warning("Failed to load preset %s: %s", path.name, exc)
+    presets.sort(key=lambda p: (p.get("sort_order", 9999), p["name"]))
+    return presets
 
 
-def master(input_path: str, preset: dict) -> MasterResult:
+def master(
+    input_path: str,
+    preset: dict,
+    export_fmt: ExportFormat | None = None,
+) -> MasterResult:
+    if export_fmt is None:
+        export_fmt = DEFAULT_FORMAT
+
     input_path = Path(input_path)
     preset_name = preset["name"]
     slug = preset["slug"]
     target_lufs = preset["target_lufs"]
     true_peak = preset["true_peak_ceiling"]
 
-    # Check if input file exists
     if not input_path.exists():
         return MasterResult(
             output_path=None,
             preset_name=preset_name,
             pass1_lufs=None,
-            error=f"Input file does not exist: {input_path}"
+            error=f"Input file does not exist: {input_path}",
         )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = OUTPUT_DIR / f"{input_path.stem}_mastered_{slug}.wav"
+    output_path = (
+        OUTPUT_DIR
+        / f"{input_path.stem}_mastered_{slug}_{export_fmt.slug}.{export_fmt.extension}"
+    )
 
-    # Pass 1: measure
+    # Pass 1: measure integrated loudness
     p1_cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA=11:print_format=json",
@@ -70,7 +99,7 @@ def master(input_path: str, preset: dict) -> MasterResult:
             output_path=None,
             preset_name=preset_name,
             pass1_lufs=None,
-            error=f"FFmpeg Pass 1 failed: {p1.stderr[-400:]}"
+            error=f"FFmpeg Pass 1 failed: {p1.stderr[-400:]}",
         )
 
     measured = _parse_loudnorm_json(p1.stderr)
@@ -79,7 +108,7 @@ def master(input_path: str, preset: dict) -> MasterResult:
             output_path=None,
             preset_name=preset_name,
             pass1_lufs=None,
-            error="Could not parse FFmpeg loudnorm output from Pass 1"
+            error="Could not parse FFmpeg loudnorm output from Pass 1",
         )
 
     pass1_lufs = float(measured.get("input_i", 0.0))
@@ -108,12 +137,13 @@ def master(input_path: str, preset: dict) -> MasterResult:
     else:
         af = loudnorm
 
-    # Pass 2: apply
+    # Pass 2: apply loudnorm + encode to target format
     p2_cmd = [
         "ffmpeg", "-y", "-i", str(input_path),
         "-af", af,
-        "-ar", "48000",
-        "-c:a", "pcm_s24le",
+        "-ar", str(export_fmt.sample_rate),
+        "-c:a", export_fmt.ffmpeg_codec,
+        *export_fmt.ffmpeg_extra,
         str(output_path),
     ]
     p2 = subprocess.run(p2_cmd, capture_output=True, text=True)
@@ -123,13 +153,13 @@ def master(input_path: str, preset: dict) -> MasterResult:
             output_path=None,
             preset_name=preset_name,
             pass1_lufs=pass1_lufs,
-            error=f"FFmpeg Pass 2 failed: {p2.stderr[-400:]}"
+            error=f"FFmpeg Pass 2 failed: {p2.stderr[-400:]}",
         )
 
     return MasterResult(
         output_path=str(output_path),
         preset_name=preset_name,
-        pass1_lufs=pass1_lufs
+        pass1_lufs=pass1_lufs,
     )
 
 

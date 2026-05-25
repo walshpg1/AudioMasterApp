@@ -1,0 +1,12 @@
+{
+  "name": "Podcast Master -16 LUFS",
+  "slug": "podcast_master",
+  "sort_order": 50,
+  "target_lufs": -16.0,
+  "true_peak_ceiling": -1.0,
+  "compress": true,
+  "compress_ratio": 2.0,
+  "compress_threshold_db": -24.0,
+  "compress_attack_ms": 10,
+  "compress_release_ms": 150
+}

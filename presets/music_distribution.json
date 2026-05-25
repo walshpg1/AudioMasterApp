@@ -1,0 +1,12 @@
+{
+  "name": "Music Distribution -14 LUFS",
+  "slug": "music_distribution",
+  "sort_order": 60,
+  "target_lufs": -14.0,
+  "true_peak_ceiling": -1.0,
+  "compress": true,
+  "compress_ratio": 1.5,
+  "compress_threshold_db": -20.0,
+  "compress_attack_ms": 20,
+  "compress_release_ms": 200
+}
