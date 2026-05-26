@@ -37,7 +37,10 @@ def split_audio(
         return SplitResult(error=f"Input file does not exist: {src}")
 
     output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        output_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        return SplitResult(error=f"Cannot create output directory: {exc}")
 
     ext = src.suffix  # preserves format: .wav, .mp3, .flac, etc.
     pattern = str(output_dir / f"{src.stem}_%03d{ext}")
@@ -53,7 +56,13 @@ def split_audio(
         pattern,
     ]
 
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return SplitResult(
+            output_dir=output_dir,
+            error="FFmpeg timed out after 600 s",
+        )
     if proc.returncode != 0:
         logger.error("FFmpeg split failed: %s", proc.stderr[-800:])
         return SplitResult(
@@ -61,7 +70,7 @@ def split_audio(
             error=f"FFmpeg split failed: {proc.stderr[-400:]}",
         )
 
-    clips = sorted(output_dir.glob(f"{src.stem}_*{ext}"))
+    clips = sorted(output_dir.glob(f"{src.stem}_[0-9][0-9][0-9]{ext}"))
     return SplitResult(
         clips=[str(c) for c in clips],
         clip_count=len(clips),
