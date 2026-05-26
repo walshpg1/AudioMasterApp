@@ -320,7 +320,7 @@ class App(ctk.CTk):
         btn_row.pack(fill="x", padx=12, pady=(0, 10))
         self._master_split_btn = ctk.CTkButton(
             btn_row, text="Master & Split",
-            command=self._run_master_and_split, width=160,
+            command=self._run_master_and_split, width=160, state="disabled",
         )
         self._master_split_btn.pack(side="left", padx=(0, 8))
         self._open_clips_btn = ctk.CTkButton(
@@ -738,6 +738,7 @@ class App(ctk.CTk):
             self._wav_path = path
             self._file_label.configure(text=Path(path).name)
             self._master_btn.configure(state="normal")
+            self._master_split_btn.configure(state="normal")
             self._set_status("File selected. Click Analyse to inspect it.", "normal")
             self._settings["last_input_file"] = path
             self._settings["last_input_folder"] = str(Path(path).parent)
@@ -988,14 +989,17 @@ class App(ctk.CTk):
     def _master_split_worker(
         self, preset: dict, export_fmt: ExportFormat, clip_duration: float
     ) -> None:
+        wav_path = self._wav_path        # snapshot before blocking calls
+        output_dir = self._output_dir    # snapshot before blocking calls
         self.after(0, lambda: self._progress.set(0.35))
-        master_result = master(self._wav_path, preset, export_fmt, self._output_dir)
+        master_result = master(wav_path, preset, export_fmt, output_dir)
         self.after(0, lambda: self._progress.set(0.70))
+        self.after(0, lambda: self._set_status("Splitting…", "normal"))
         if master_result.error:
             self.after(0, lambda r=master_result: self._on_master_split_done(r, None))
             return
-        source_stem = Path(self._wav_path).stem
-        clips_dir = self._output_dir / f"{source_stem}_clips"
+        source_stem = Path(wav_path).stem
+        clips_dir = output_dir / f"{source_stem}_clips"
         split_result = split_audio(master_result.output_path, clip_duration, clips_dir)
         self.after(0, lambda: self._progress.set(0.95))
         self.after(
@@ -1008,15 +1012,17 @@ class App(ctk.CTk):
         master_result,
         split_result: SplitAudioResult | None,
     ) -> None:
-        self._progress.set(1.0)
         self._master_split_btn.configure(state="normal")
         if master_result.error:
+            self._progress.set(0)
             self._set_status(f"Mastering error: {master_result.error}", "error")
             return
         if split_result is None or split_result.error:
+            self._progress.set(0)
             err = split_result.error if split_result else "Unknown split error"
             self._set_status(f"Split error: {err}", "error")
             return
+        self._progress.set(1.0)
         self._last_clips_dir = split_result.output_dir
         self._open_clips_btn.configure(state="normal")
         folder_name = split_result.output_dir.name
