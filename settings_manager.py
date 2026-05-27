@@ -53,6 +53,9 @@ def _defaults() -> dict:
         "video_output_folder": "",
         "video_format": "png",
         "video_watcher_enabled": False,
+        # Pipeline
+        "pipeline_output_folder": r"D:\AIStudio\Apps\AIVideoStudio\exports\tiktok",
+        "pipeline_watcher_enabled": False,
     }
 
 
