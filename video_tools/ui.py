@@ -282,8 +282,9 @@ class VideoToolsTab:
 
     def _update_preview(self, path: Path) -> None:
         try:
-            img = Image.open(path)
-            img.thumbnail((200, 120), Image.LANCZOS)
+            with Image.open(path) as src:
+                src.thumbnail((200, 120), Image.Resampling.LANCZOS)
+                img = src.copy()
             ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=img.size)
             self._thumb_lbl.configure(image=ctk_img, text="")
             self._thumb_lbl._ctk_image = ctk_img  # prevent GC
