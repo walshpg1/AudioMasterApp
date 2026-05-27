@@ -1,7 +1,9 @@
 from __future__ import annotations
 import json
 import logging
+import os
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -9,7 +11,25 @@ from export_formats import DEFAULT_FORMAT, list_export_formats
 
 logger = logging.getLogger(__name__)
 
-SETTINGS_PATH = Path(__file__).parent / "settings.json"
+
+def _compute_settings_path(
+    frozen: bool = False,
+    executable_dir: Path | None = None,
+) -> Path:
+    """Return the path where settings.json should live.
+
+    In packaged (frozen) mode, settings are stored in the user's AppData so they
+    survive app updates.  In dev mode, the file lives beside this module.
+    """
+    if frozen:
+        appdata = os.environ.get("APPDATA") or str(Path.home())
+        return Path(appdata) / "AudioMasterApp" / "settings.json"
+    return Path(__file__).parent / "settings.json"
+
+
+SETTINGS_PATH = _compute_settings_path(
+    frozen=getattr(sys, "frozen", False),
+)
 
 
 def _defaults() -> dict:
@@ -21,7 +41,18 @@ def _defaults() -> dict:
         "last_selected_export_format": DEFAULT_FORMAT.name,
         "resolve_import_enabled": False,
         "auto_generate_report": False,
+        "latest_report_path": None,
+        "last_watch_folder": None,
+        "watch_poll_interval_seconds": 5,
+        "move_processed_originals_enabled": True,
+        "move_failed_originals_enabled": True,
+        "resolve_handoff_note_enabled": False,
         "window_geometry": None,
+        # Video Tools
+        "video_watch_folder": r"D:\AIStudio\Apps\AIVideoStudio\renders",
+        "video_output_folder": "",
+        "video_format": "png",
+        "video_watcher_enabled": False,
     }
 
 
@@ -67,6 +98,7 @@ def load(preset_names: list[str] | None = None) -> dict:
 def save(settings: dict) -> None:
     """Write settings dict to disk. Silently logs on failure so app never crashes."""
     try:
+        SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
         SETTINGS_PATH.write_text(
             json.dumps(settings, indent=2, ensure_ascii=False),
             encoding="utf-8",
