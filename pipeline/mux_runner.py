@@ -37,6 +37,6 @@ def run_mux(
             error = proc.stderr[-400:] if proc.stderr else "non-zero exit"
             on_done(MuxResult(job=job, success=False, ffmpeg_cmd=cmd, error=error))
     except subprocess.TimeoutExpired:
-        on_done(MuxResult(job=job, success=False, ffmpeg_cmd=cmd, error="FFmpeg mux timed out after 300 s"))
+        on_done(MuxResult(job=job, success=False, ffmpeg_cmd=cmd, error=f"FFmpeg mux timed out after {_MUX_TIMEOUT} s"))
     except OSError as exc:
         on_done(MuxResult(job=job, success=False, ffmpeg_cmd=cmd, error=str(exc)))
