@@ -28,6 +28,7 @@ from folder_watcher import FolderWatcher
 from mastering_engine import master, list_presets
 import resolve_handoff
 from audio_splitter import split_audio, SplitResult as SplitAudioResult
+from video_tools.ui import VideoToolsTab
 
 # ---------------------------------------------------------------------------
 # Theme
@@ -69,7 +70,8 @@ class App(ctk.CTk):
         super().__init__()
         self.title("AudioMasterApp")
         self.geometry("520x960")
-        self.resizable(False, False)
+        self.resizable(True, True)
+        self.minsize(520, 900)
 
         self._loading = True
 
@@ -137,11 +139,13 @@ class App(ctk.CTk):
         self._tabview.add("Batch")
         self._tabview.add("Watch Folder")
         self._tabview.add("Preview")
+        self._tabview.add("Video Tools")
 
         self._build_single_file_tab(self._tabview.tab("Single File"))
         self._build_batch_tab(self._tabview.tab("Batch"))
         self._build_watch_tab(self._tabview.tab("Watch Folder"))
         self._build_preview_tab(self._tabview.tab("Preview"))
+        VideoToolsTab(self._tabview.tab("Video Tools"), self)
 
     # ------------------------------------------------------------------
     # Single File tab
