@@ -101,4 +101,4 @@ def test_stop_after_start_graceful(tmp_path):
     with patch("video_tools.extraction_service.find_ffmpeg", return_value="ffmpeg"):
         service.start(tmp_path, tmp_path / "stills", "png", lambda r: None)
     service.stop()  # should not raise or hang
-    assert not service._stop_event.is_set() or True  # stop_event state doesn't matter after stop
+    assert service._stop_event.is_set()
