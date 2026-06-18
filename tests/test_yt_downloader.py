@@ -47,3 +47,17 @@ def test_parse_progress_irrelevant_line():
 def test_parse_progress_100_percent():
     result = parse_progress_line("[download] 100% of 5.00MiB")
     assert result == ("downloading", 1.0)
+
+
+from youtube_import.downloader import parse_destination_line
+
+
+def test_parse_destination_line_valid():
+    line = r"[ExtractAudio] Destination: D:\AIStudio\Outputs\audio\downloads\my track.mp3"
+    result = parse_destination_line(line)
+    assert result == Path(r"D:\AIStudio\Outputs\audio\downloads\my track.mp3")
+
+
+def test_parse_destination_line_irrelevant():
+    result = parse_destination_line("[download]  47.3% of ~5.00MiB")
+    assert result is None

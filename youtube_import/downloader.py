@@ -43,3 +43,15 @@ def parse_progress_line(line: str) -> tuple[str, float | None] | None:
     elif stripped.startswith("[ffmpeg]") or stripped.startswith("[ExtractAudio]"):
         return ("converting", None)
     return None
+
+
+def parse_destination_line(line: str) -> Path | None:
+    """
+    "[ExtractAudio] Destination: D:\\path\\to\\song.mp3" -> Path(...)
+    anything else -> None
+    """
+    stripped = line.strip()
+    prefix = "[ExtractAudio] Destination: "
+    if stripped.startswith(prefix):
+        return Path(stripped[len(prefix):])
+    return None
