@@ -90,6 +90,14 @@ class YoutubeDownloader:
                 text=True,
             )
 
+            # Drain stderr concurrently to prevent pipe buffer deadlock
+            stderr_lines: list[str] = []
+            def _drain_stderr() -> None:
+                for l in proc.stderr:
+                    stderr_lines.append(l.rstrip("\n"))
+            stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
+            stderr_thread.start()
+
             cancelled = False
             for line in proc.stdout:
                 stripped = line.rstrip("\n")
@@ -111,16 +119,18 @@ class YoutubeDownloader:
                     progress_cb(parsed[0], parsed[1])
 
             if cancelled:
+                stderr_thread.join(timeout=2)
                 done_cb(DownloadResult(
                     success=False, output_path=None,
                     error="Cancelled", log_lines=log_lines,
                 ))
                 return
 
-            stderr_output = proc.stderr.read()
-            for err_line in stderr_output.splitlines():
-                logger.debug("[yt-dlp err] %s", err_line)
+            stderr_thread.join()
             proc.wait()
+            stderr_output = "\n".join(stderr_lines)
+            for err_line in stderr_lines:
+                logger.debug("[yt-dlp err] %s", err_line)
 
             logger.info("[yt-dlp done] returncode=%d output_path=%s", proc.returncode, output_path)
 
