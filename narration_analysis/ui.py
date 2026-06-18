@@ -36,6 +36,7 @@ class NarrationAnalysisTab:
         self._cancel_event = threading.Event()
         self._is_playing = False
         self._model_var = ctk.StringVar(value="small")
+        self._poll_id: str | None = None
         self._build_ui()
         self._poll_playback()
 
@@ -89,7 +90,7 @@ class NarrationAnalysisTab:
         )
         self._cancel_btn.pack(side="right", padx=4, pady=8)
         self._analyse_btn = ctk.CTkButton(
-            ctrl_row, text="Analyse", command=self._start_analysis, width=100
+            ctrl_row, text="Analyse", command=self._start_analysis, width=100, state="disabled"
         )
         self._analyse_btn.pack(side="right", padx=8, pady=8)
 
@@ -163,14 +164,12 @@ class NarrationAnalysisTab:
         self._audio_path = Path(path_str)
         self._file_lbl.configure(text=self._audio_path.name)
         self._player.load(self._audio_path)
+        self._analyse_btn.configure(state="normal")
         self._play_btn.configure(state="normal")
         self._stop_btn.configure(state="normal")
         self._status_lbl.configure(text=f"Loaded: {self._audio_path.name}")
 
     def _start_analysis(self) -> None:
-        if self._audio_path is None:
-            self._status_lbl.configure(text="Select an audio file first.")
-            return
         self._cancel_event.clear()
         self._analyse_btn.configure(state="disabled")
         self._cancel_btn.configure(state="normal")
@@ -272,6 +271,7 @@ class NarrationAnalysisTab:
         self._status_lbl.configure(text=f"Error: {err}")
         self._analyse_btn.configure(state="normal")
         self._cancel_btn.configure(state="disabled")
+        self._progress.set(0)
 
     # ------------------------------------------------------------------
     # Preview population
@@ -329,7 +329,10 @@ class NarrationAnalysisTab:
             if not self._player.is_playing():
                 self._is_playing = False
                 self._play_btn.configure(text="▶ Play")
-        self._root.after(500, self._poll_playback)
+        self._poll_id = self._root.after(500, self._poll_playback)
 
     def cleanup(self) -> None:
+        if self._poll_id is not None:
+            self._root.after_cancel(self._poll_id)
+            self._poll_id = None
         self._player.cleanup()
