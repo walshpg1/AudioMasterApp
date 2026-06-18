@@ -4,6 +4,7 @@ import logging.handlers
 import math
 import os
 import re
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -30,6 +31,7 @@ import resolve_handoff
 from audio_splitter import split_audio, SplitResult as SplitAudioResult
 from video_tools.ui import VideoToolsTab
 from pipeline.ui import PipelineTab
+from narration_analysis.ui import NarrationAnalysisTab
 
 # ---------------------------------------------------------------------------
 # Theme
@@ -51,7 +53,8 @@ _APP_DIR: Path = (
     Path(sys.executable).parent if getattr(sys, "frozen", False)
     else Path(__file__).parent
 )
-_DEFAULT_OUTPUT_DIR = _APP_DIR / "output"
+_DEFAULT_OUTPUT_DIR = Path(r"D:\AIStudio\Outputs\audio\mastered")
+PIPELINE_AUDIO_READY = Path(r"D:\AIStudio\Pipeline\staging\audio_ready")
 
 
 def _ensure_runtime_dirs() -> None:
@@ -142,6 +145,7 @@ class App(ctk.CTk):
         self._tabview.add("Preview")
         self._tabview.add("Video Tools")
         self._tabview.add("Pipeline")
+        self._tabview.add("Narration Analysis")
 
         self._build_single_file_tab(self._tabview.tab("Single File"))
         self._build_batch_tab(self._tabview.tab("Batch"))
@@ -149,6 +153,7 @@ class App(ctk.CTk):
         self._build_preview_tab(self._tabview.tab("Preview"))
         VideoToolsTab(self._tabview.tab("Video Tools"), self)
         PipelineTab(self._tabview.tab("Pipeline"), self)
+        self._narration_tab = NarrationAnalysisTab(self._tabview.tab("Narration Analysis"), self)
 
     # ------------------------------------------------------------------
     # Single File tab
@@ -724,6 +729,7 @@ class App(ctk.CTk):
             self._watch_stop_event.set()
         self._settings["window_geometry"] = self.geometry()
         settings_manager.save(self._settings)
+        self._narration_tab.cleanup()
         self.destroy()
 
     # ==================================================================
@@ -937,14 +943,16 @@ class App(ctk.CTk):
             return
         self._last_output_path = result.output_path
         output_name = Path(result.output_path).name
+        staged = self._stage_for_pipeline(result.output_path)
+        stage_tag = "  · staged" if staged else ""
         if report_path:
             self._settings["latest_report_path"] = report_path
             self._save_settings()
             self._update_report_btn()
             rp_name = Path(report_path).name
-            self._set_status(f"Done! → {output_name}  |  Report: {rp_name}", "success")
+            self._set_status(f"Done! → {output_name}  |  Report: {rp_name}{stage_tag}", "success")
         else:
-            self._set_status(f"Done!  →  {output_name}", "success")
+            self._set_status(f"Done!  →  {output_name}{stage_tag}", "success")
         self._play_btn.configure(state="normal")
         self._copy_path_btn.configure(state="normal")
         if handoff_note_path:
@@ -963,6 +971,25 @@ class App(ctk.CTk):
             os.startfile(self._last_output_path)
         else:
             self._set_status("Mastered file not found.", "warning")
+
+    def _stage_for_pipeline(self, output_path: str) -> bool:
+        """Copy a mastered WAV to Pipeline staging\audio_ready for ComfyUIMonitor.
+
+        Thread-safe: only performs file I/O.  Returns True on success, False on
+        any error or when the file is not a WAV (pipeline expects WAV only).
+        """
+        try:
+            src = Path(output_path)
+            if src.suffix.lower() != ".wav":
+                return False
+            PIPELINE_AUDIO_READY.mkdir(parents=True, exist_ok=True)
+            dest = PIPELINE_AUDIO_READY / src.name
+            shutil.copy2(str(src), str(dest))
+            logger.info("Staged for pipeline: %s → %s", src.name, dest)
+            return True
+        except Exception as exc:
+            logger.warning("Pipeline staging failed for %s: %s", output_path, exc)
+            return False
 
     # ==================================================================
     # Clip Splitter
@@ -1030,11 +1057,13 @@ class App(ctk.CTk):
             self._set_status(f"Split error: {err}", "error")
             return
         self._progress.set(1.0)
+        staged = self._stage_for_pipeline(master_result.output_path)
         self._last_clips_dir = split_result.output_dir
         self._open_clips_btn.configure(state="normal")
         folder_name = split_result.output_dir.name
+        stage_tag = "  · staged" if staged else ""
         self._set_status(
-            f"Done! {split_result.clip_count} clips → {folder_name}/",
+            f"Done! {split_result.clip_count} clips → {folder_name}/{stage_tag}",
             "success",
         )
 
@@ -1121,7 +1150,9 @@ class App(ctk.CTk):
         self._batch_results.append(result)
         self._batch_log.configure(state="normal")
         if result.success:
-            line = f"  OK  {result.input_path.name}\n"
+            staged = self._stage_for_pipeline(result.output_path)
+            stage_tag = " · staged" if staged else ""
+            line = f"  OK  {result.input_path.name}{stage_tag}\n"
         else:
             short_err = (result.error or "unknown error")[:80]
             line = f" ERR  {result.input_path.name}  —  {short_err}\n"
@@ -1346,10 +1377,13 @@ class App(ctk.CTk):
                     if self._settings.get("resolve_handoff_note_enabled"):
                         self._write_handoff_note_for_file(result, preset, export_fmt)
                     if result.output_path:
+                        staged = self._stage_for_pipeline(result.output_path)
                         self.after(
                             0,
                             lambda p=result.output_path: self._trigger_preview(p),
                         )
+                        if staged:
+                            self.after(0, lambda: self._watch_log_append("   → staged for pipeline"))
                     self.after(0, lambda n=path.name: self._on_watch_file_done(n))
             self._watch_stop_event.wait(timeout=watcher.poll_interval)
         self.after(0, self._on_watch_stopped)
