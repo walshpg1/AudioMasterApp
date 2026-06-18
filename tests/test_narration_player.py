@@ -13,7 +13,6 @@ def _make_unavailable() -> AudioPlayer:
     p._available = False
     p._data = None
     p._sr = 44100
-    p._path = None
     p._playing = False
     p._seek_offset = 0.0
     p._play_start = 0.0
@@ -49,10 +48,10 @@ def test_cleanup_does_not_raise_when_unavailable():
     _make_unavailable().cleanup()
 
 
-def test_load_does_not_set_path_when_unavailable():
+def test_load_does_nothing_when_unavailable():
     p = _make_unavailable()
     p.load(Path("test.mp3"))
-    assert p._path is None
+    assert p._data is None
 
 
 def test_seek_offset_set_on_seek():
@@ -63,7 +62,6 @@ def test_seek_offset_set_on_seek():
     p._available = True
     p._data = np.zeros((44100, 2), dtype="float32")
     p._sr = 44100
-    p._path = Path("test.mp3")
     p._playing = False
     p._seek_offset = 0.0
     p._play_start = 0.0
@@ -85,7 +83,6 @@ def test_get_pos_adds_seek_offset():
     p._available = True
     p._data = None
     p._sr = 44100
-    p._path = None
     p._playing = True
     p._seek_offset = 30.0
     p._play_start = time.time() - 5.0  # simulates 5s of playback
@@ -102,7 +99,6 @@ def test_stop_resets_seek_offset():
     p._available = True
     p._data = None
     p._sr = 44100
-    p._path = None
     p._playing = True
     p._seek_offset = 42.0
     p._play_start = 0.0
@@ -123,7 +119,6 @@ def test_pause_captures_position():
     p._available = True
     p._data = None
     p._sr = 44100
-    p._path = None
     p._playing = True
     p._seek_offset = 10.0
     p._play_start = time.time() - 3.0  # 3s elapsed

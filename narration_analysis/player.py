@@ -22,7 +22,6 @@ class AudioPlayer:
         self._available: bool = _check_available()
         self._data: np.ndarray | None = None
         self._sr: int = 44100
-        self._path: Path | None = None
         self._playing: bool = False
         self._seek_offset: float = 0.0
         self._play_start: float = 0.0
@@ -37,7 +36,6 @@ class AudioPlayer:
             with self._lock:
                 self._data = data.astype("float32")
                 self._sr = sr
-                self._path = path
                 self._seek_offset = 0.0
         except Exception as exc:
             logger.warning("Could not load %s for playback: %s", path.name, exc)
