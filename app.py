@@ -32,6 +32,7 @@ from audio_splitter import split_audio, SplitResult as SplitAudioResult
 from video_tools.ui import VideoToolsTab
 from pipeline.ui import PipelineTab
 from narration_analysis.ui import NarrationAnalysisTab
+from youtube_import.ui import YouTubeImportTab
 
 # ---------------------------------------------------------------------------
 # Theme
@@ -146,6 +147,7 @@ class App(ctk.CTk):
         self._tabview.add("Video Tools")
         self._tabview.add("Pipeline")
         self._tabview.add("Narration Analysis")
+        self._tabview.add("YouTube Import")
 
         self._build_single_file_tab(self._tabview.tab("Single File"))
         self._build_batch_tab(self._tabview.tab("Batch"))
@@ -154,6 +156,7 @@ class App(ctk.CTk):
         VideoToolsTab(self._tabview.tab("Video Tools"), self)
         PipelineTab(self._tabview.tab("Pipeline"), self)
         self._narration_tab = NarrationAnalysisTab(self._tabview.tab("Narration Analysis"), self)
+        YouTubeImportTab(self._tabview.tab("YouTube Import"), self)
 
     # ------------------------------------------------------------------
     # Single File tab
@@ -1539,6 +1542,14 @@ class App(ctk.CTk):
         colours = _STATUS_COLOURS.get(level, _STATUS_COLOURS["normal"])
         colour = colours[0] if ctk.get_appearance_mode() == "Dark" else colours[1]
         self._status_lbl.configure(text=msg, text_color=colour)
+
+    def load_file_for_mastering(self, path: Path) -> None:
+        """Switch to Single File tab and pre-load a downloaded file."""
+        self._wav_path = str(path)
+        self._file_label.configure(text=path.name)
+        self._master_btn.configure(state="normal")
+        self._master_split_btn.configure(state="normal")
+        self._tabview.set("Single File")
 
 
 if __name__ == "__main__":
