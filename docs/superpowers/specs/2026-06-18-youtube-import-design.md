@@ -107,6 +107,18 @@ def parse_progress_line(line: str) -> tuple[str, float] | None:
 
 Phase switches from "downloading" to "converting" when `[ffmpeg]` or `[ExtractAudio]` appears.
 
+### Filename Capture (pure function)
+
+```python
+def parse_destination_line(line: str) -> Path | None:
+    """
+    "[ExtractAudio] Destination: D:\\path\\to\\song.mp3"  → Path("D:\\path\\to\\song.mp3")
+    anything else                                          → None
+    """
+```
+
+`YoutubeDownloader.run()` calls this on every stdout line. The last non-`None` result becomes `result.output_path`. This avoids scanning the directory for the newest file and is robust to filenames with spaces.
+
 ### `YoutubeDownloader.run()`
 
 Signature:
@@ -116,12 +128,14 @@ def run(
     job: DownloadJob,
     progress_cb: Callable[[str, float | None], None],
     done_cb: Callable[[DownloadResult], None],
+    cancel_event: threading.Event | None = None,
 ) -> None:
 ```
 
 - Runs yt-dlp subprocess, reads stdout line-by-line
 - Calls `progress_cb(phase, fraction)` for each parsed progress line
-- On completion: scans `output_dir` for newest file matching the format → sets `output_path`
+- Captures `output_path` from `[ExtractAudio] Destination:` lines (see above)
+- Checks `cancel_event` after each line; if set, kills the subprocess and returns `DownloadResult(success=False, error="Cancelled")`
 - Calls `done_cb(result)` — **caller** is responsible for marshalling to main thread via `root.after()`
 
 ---
@@ -153,13 +167,16 @@ Output:  track_name.mp3
 
 ### State Machine
 
-| State | Progress bar | Status text | Download btn | Load btn |
-|---|---|---|---|---|
-| `IDLE` | hidden | — | enabled | hidden |
-| `DOWNLOADING` | indeterminate→% | "Downloading…" | disabled | hidden |
-| `CONVERTING` | indeterminate | "Converting…" | disabled | hidden |
-| `COMPLETE` | 1.0 | "Complete — {filename}" | enabled | visible |
-| `FAILED` | hidden | "Failed: {reason}" | enabled | hidden |
+| State | Progress bar | Status text | Download btn | Cancel btn | Load btn |
+|---|---|---|---|---|---|
+| `IDLE` | hidden | — | enabled | hidden | hidden |
+| `DOWNLOADING` | indeterminate→% | "Downloading…" | disabled | visible | hidden |
+| `CONVERTING` | indeterminate | "Converting…" | disabled | visible | hidden |
+| `COMPLETE` | 1.0 | "Complete — {filename}" | enabled | hidden | visible |
+| `FAILED` | hidden | "Failed: {reason}" | enabled | hidden | hidden |
+| `CANCELLED` | hidden | "Cancelled" | enabled | hidden | hidden |
+
+The Cancel button calls `_cancel_event.set()`, which signals the worker thread to kill the subprocess. The `CANCELLED` state is treated like `FAILED` for UI purposes (Download re-enabled, no Load button).
 
 ### Missing Tool States
 
@@ -185,20 +202,26 @@ Both checks run once during `__init__`. If either tool is missing, the Download 
 [Download clicked]
   → validate URL non-empty
   → set state DOWNLOADING
+  → self._cancel_event = threading.Event()
   → threading.Thread(target=_worker, daemon=True).start()
+
+[Cancel clicked]
+  → self._cancel_event.set()
+  (worker detects this and kills subprocess)
 
 [_worker — background thread]
   → YoutubeDownloader().run(
         job,
-        progress_cb = lambda phase, frac: root.after(0, self._on_progress, phase, frac),
-        done_cb     = lambda result:       root.after(0, self._on_done, result)
+        progress_cb  = lambda phase, frac: root.after(0, self._on_progress, phase, frac),
+        done_cb      = lambda result:       root.after(0, self._on_done, result),
+        cancel_event = self._cancel_event,
     )
 
 [_on_progress — main thread via after()]
   → update progress bar + status label
 
 [_on_done — main thread via after()]
-  → set state COMPLETE or FAILED
+  → set state COMPLETE, FAILED, or CANCELLED
   → store result.output_path
   → show/hide Load button
 ```
@@ -245,11 +268,13 @@ Output directory (`D:\AIStudio\Outputs\audio\downloads`) is a constant in `downl
 
 ## 8. Output Directory
 
-```
-D:\AIStudio\Outputs\audio\downloads\
+```python
+# downloader.py
+OUTPUTS_ROOT   = Path(r"D:\AIStudio\Outputs")
+DOWNLOADS_DIR  = OUTPUTS_ROOT / "audio" / "downloads"
 ```
 
-Created with `Path.mkdir(parents=True, exist_ok=True)` at download time. Not created at app startup.
+`OUTPUTS_ROOT` mirrors the same root used by the rest of the AIStudio toolchain. `DOWNLOADS_DIR` is the only constant used throughout the feature — never a string literal. Created with `Path.mkdir(parents=True, exist_ok=True)` at download time, not at app startup.
 
 ---
 
@@ -276,6 +301,8 @@ Pure-logic only — no network, no subprocess, no Tkinter:
 | `test_parse_progress_irrelevant_line` | Random line → `None` |
 | `test_parse_progress_100_percent` | `"[download] 100%"` → `("downloading", 1.0)` |
 | `test_download_result_defaults` | Dataclass initialises with `success=False, output_path=None` |
+| `test_parse_destination_line_valid` | `"[ExtractAudio] Destination: D:\path\song.mp3"` → `Path(...)` |
+| `test_parse_destination_line_irrelevant` | Unrelated line → `None` |
 
 ---
 
@@ -285,4 +312,6 @@ Pure-logic only — no network, no subprocess, no Tkinter:
 - No auto-mastering triggered on download completion
 - No yt-dlp Python library — binary subprocess only
 - No separate manual FFmpeg step — yt-dlp handles conversion via `--ffmpeg-location`
-- Output dir is fixed (`downloads\`) — not in settings for v1
+- Output path resolved from `[ExtractAudio] Destination:` stdout line — no directory scanning
+- Cancellation via `threading.Event` + subprocess kill — no force-termination of ffmpeg separately
+- Output dir derived from `OUTPUTS_ROOT` constant — no hardcoded path strings in logic code
