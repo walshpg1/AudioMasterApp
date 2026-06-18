@@ -19,3 +19,31 @@ def test_find_ytdlp_missing():
         with patch.object(sys, "frozen", False, create=True):
             result = find_ytdlp()
     assert result is None
+
+
+from youtube_import.downloader import parse_progress_line
+
+
+def test_parse_progress_download():
+    result = parse_progress_line("[download]  47.3% of ~5.00MiB")
+    assert result == ("downloading", 0.473)
+
+
+def test_parse_progress_converting_ffmpeg():
+    result = parse_progress_line("[ffmpeg] Merging formats into output.mp3")
+    assert result == ("converting", None)
+
+
+def test_parse_progress_converting_extract():
+    result = parse_progress_line("[ExtractAudio] Destination: track.mp3")
+    assert result == ("converting", None)
+
+
+def test_parse_progress_irrelevant_line():
+    result = parse_progress_line("[youtube] Extracting URL: https://youtube.com/watch?v=abc")
+    assert result is None
+
+
+def test_parse_progress_100_percent():
+    result = parse_progress_line("[download] 100% of 5.00MiB")
+    assert result == ("downloading", 1.0)

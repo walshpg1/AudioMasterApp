@@ -24,3 +24,22 @@ def find_ytdlp() -> str | None:
         if candidate.exists():
             return str(candidate)
     return shutil.which("yt-dlp")
+
+
+def parse_progress_line(line: str) -> tuple[str, float | None] | None:
+    """
+    Parse yt-dlp progress lines.
+
+    "[download]  47.3% ..."  -> ("downloading", 0.473)
+    "[ffmpeg] ..."           -> ("converting", None)
+    "[ExtractAudio] ..."     -> ("converting", None)
+    anything else            -> None
+    """
+    stripped = line.strip()
+    if stripped.startswith("[download]"):
+        m = re.search(r"(\d+\.?\d*)%", stripped)
+        if m:
+            return ("downloading", float(m.group(1)) / 100.0)
+    elif stripped.startswith("[ffmpeg]") or stripped.startswith("[ExtractAudio]"):
+        return ("converting", None)
+    return None
