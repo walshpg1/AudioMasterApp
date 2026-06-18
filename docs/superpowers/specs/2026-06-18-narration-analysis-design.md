@@ -55,10 +55,11 @@ class Scene:
 @dataclass
 class AnalysisResult:
     source_path: Path
+    project_name: str          # e.g. "The_Day_Work_Let_Me_Go" — derived from filename, spaces→underscores
     duration: float
     segments: list[TranscriptSegment]
     scenes: list[Scene]
-    output_dir: Path
+    output_dir: Path           # root: D:\AIStudio\Outputs\narration_analysis\{project_name}\
 ```
 
 ---
@@ -130,12 +131,23 @@ Output root: `D:\AIStudio\Outputs\narration_analysis\`
 ```json
 {
   "source": "voiceover.mp3",
+  "project_name": "The_Day_Work_Let_Me_Go",
   "duration": 120.4,
   "scenes": [
-    {"scene_number": 1, "narration": "Twenty-one years.", "start": 0.0, "end": 12.5, "duration": 12.5}
+    {
+      "scene_number": 1,
+      "narration": "Twenty-one years.",
+      "start": 0.0,
+      "end": 12.5,
+      "duration": 12.5,
+      "visual_prompt": "",
+      "status": "pending"
+    }
   ]
 }
 ```
+
+`visual_prompt` is reserved for future prompt-generation workflows (Script → ElevenLabs → Narration Analysis → Storyboard → ComfyUI). `status` tracks scene production state (`pending` → `generating` → `complete` → `rejected`).
 
 ```python
 def export_all(result: AnalysisResult) -> dict[str, Path]
@@ -220,14 +232,25 @@ New dependencies to add to `requirements.txt`: `pygame>=2.5.0`
 
 ```
 D:\AIStudio\Outputs\narration_analysis\
-  transcripts\    ← .txt
-  srt\            ← .srt
-  vtt\            ← .vtt
-  json\           ← _alignment.json, _scene_list.json
-  storyboards\    ← _storyboard.json
+  {project_name}\
+    transcripts\    ← {stem}.txt
+    srt\            ← {stem}.srt
+    vtt\            ← {stem}.vtt
+    json\           ← {stem}_alignment.json, {stem}_scene_list.json
+    storyboards\    ← storyboard.json, scene_list.json
 ```
 
-All subfolders created automatically on first run.
+`project_name` is derived from the audio filename: spaces and hyphens replaced with underscores, lowercased only if already lowercase (preserves `The_Day_Work_Let_Me_Go` capitalisation). All subfolders created automatically on first run.
+
+## Isolation Guarantee
+
+This feature is **additive only**. It must not modify any of the following:
+- Existing path constants in `app.py`, `pipeline/ui.py`, `video_tools/ui.py`, or `ffmpeg_utils.py`
+- The Mux workflow or staging folders (`Pipeline\staging\audio_ready`, `Outputs\video\*`)
+- The existing output governance (`Outputs\audio\*`, `Outputs\frames\*`, `Outputs\images\*`)
+- Any existing tab, batch processor, or watch-folder logic
+
+All new I/O is confined to `D:\AIStudio\Outputs\narration_analysis\` and the `narration_analysis\` package directory.
 
 ---
 
