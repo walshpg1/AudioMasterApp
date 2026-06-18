@@ -1,4 +1,5 @@
 import json
+import os
 import pytest
 from pathlib import Path
 import settings_manager
@@ -22,10 +23,45 @@ def test_defaults_include_all_expected_keys(settings_path):
     expected = [
         "last_input_file", "last_input_folder", "last_output_folder",
         "last_selected_preset", "last_selected_export_format",
-        "resolve_import_enabled", "auto_generate_report", "window_geometry",
+        "resolve_import_enabled", "auto_generate_report",
+        "latest_report_path",
+        "last_watch_folder", "watch_poll_interval_seconds",
+        "move_processed_originals_enabled", "move_failed_originals_enabled",
+        "resolve_handoff_note_enabled",
+        "window_geometry",
     ]
     for key in expected:
         assert key in settings, f"Missing key: {key}"
+
+
+def test_latest_report_path_default_is_none(settings_path):
+    settings = settings_manager.load()
+    assert settings["latest_report_path"] is None
+
+
+def test_watch_folder_default_is_none(settings_path):
+    settings = settings_manager.load()
+    assert settings["last_watch_folder"] is None
+
+
+def test_watch_poll_interval_default_is_5(settings_path):
+    settings = settings_manager.load()
+    assert settings["watch_poll_interval_seconds"] == 5
+
+
+def test_move_processed_default_is_true(settings_path):
+    settings = settings_manager.load()
+    assert settings["move_processed_originals_enabled"] is True
+
+
+def test_move_failed_default_is_true(settings_path):
+    settings = settings_manager.load()
+    assert settings["move_failed_originals_enabled"] is True
+
+
+def test_resolve_handoff_note_default_is_false(settings_path):
+    settings = settings_manager.load()
+    assert settings["resolve_handoff_note_enabled"] is False
 
 
 def test_load_creates_file_when_missing(settings_path):
@@ -190,3 +226,54 @@ def test_all_supported_formats_are_valid(settings_path):
         )
         settings = settings_manager.load()
         assert settings["last_selected_export_format"] == fmt.name
+
+
+# ---------------------------------------------------------------------------
+# Packaged-mode path
+# ---------------------------------------------------------------------------
+
+def test_compute_settings_path_frozen_uses_appdata():
+    path = settings_manager._compute_settings_path(frozen=True)
+    appdata = os.environ.get("APPDATA") or str(Path.home())
+    assert str(path).startswith(appdata)
+
+
+def test_compute_settings_path_frozen_includes_app_name():
+    path = settings_manager._compute_settings_path(frozen=True)
+    assert "AudioMasterApp" in str(path)
+
+
+def test_compute_settings_path_frozen_filename_is_settings_json():
+    path = settings_manager._compute_settings_path(frozen=True)
+    assert path.name == "settings.json"
+
+
+def test_compute_settings_path_non_frozen_is_beside_module():
+    path = settings_manager._compute_settings_path(frozen=False)
+    expected = Path(settings_manager.__file__).parent / "settings.json"
+    assert path == expected
+
+
+def test_compute_settings_path_frozen_differs_from_non_frozen():
+    frozen_path = settings_manager._compute_settings_path(frozen=True)
+    dev_path = settings_manager._compute_settings_path(frozen=False)
+    assert frozen_path != dev_path
+
+
+def test_save_creates_parent_directory(tmp_path, monkeypatch):
+    nested = tmp_path / "deep" / "nested" / "settings.json"
+    monkeypatch.setattr("settings_manager.SETTINGS_PATH", nested)
+    settings_manager.save(settings_manager._defaults())
+    assert nested.exists()
+
+
+def test_defaults_include_youtube_output_format():
+    defaults = settings_manager._defaults()
+    assert "youtube_output_format" in defaults
+    assert defaults["youtube_output_format"] == "mp3"
+
+
+def test_defaults_include_youtube_last_url():
+    defaults = settings_manager._defaults()
+    assert "youtube_last_url" in defaults
+    assert defaults["youtube_last_url"] == ""

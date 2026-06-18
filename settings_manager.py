@@ -36,7 +36,7 @@ def _defaults() -> dict:
     return {
         "last_input_file": None,
         "last_input_folder": None,
-        "last_output_folder": None,
+        "last_output_folder": r"D:\AIStudio\Outputs\audio\mastered",
         "last_selected_preset": None,
         "last_selected_export_format": DEFAULT_FORMAT.name,
         "resolve_import_enabled": False,
@@ -49,13 +49,16 @@ def _defaults() -> dict:
         "resolve_handoff_note_enabled": False,
         "window_geometry": None,
         # Video Tools
-        "video_watch_folder": r"D:\AIStudio\Apps\AIVideoStudio\renders",
+        "video_watch_folder": r"D:\AIStudio\Outputs\video\raw",
         "video_output_folder": "",
         "video_format": "png",
         "video_watcher_enabled": False,
         # Pipeline
-        "pipeline_output_folder": r"D:\AIStudio\Apps\AIVideoStudio\exports\tiktok",
+        "pipeline_output_folder": r"D:\AIStudio\Outputs\video\exports\tiktok",
         "pipeline_watcher_enabled": False,
+        # YouTube Import
+        "youtube_output_format": "mp3",
+        "youtube_last_url":      "",
     }
 
 
