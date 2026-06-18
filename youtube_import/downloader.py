@@ -94,8 +94,8 @@ class YoutubeDownloader:
             # Drain stderr concurrently to prevent pipe buffer deadlock
             stderr_lines: list[str] = []
             def _drain_stderr() -> None:
-                for l in proc.stderr:
-                    stderr_lines.append(l.rstrip("\n"))
+                for line in proc.stderr:
+                    stderr_lines.append(line.rstrip("\n"))
             stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
             stderr_thread.start()
 

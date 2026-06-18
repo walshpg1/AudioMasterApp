@@ -1549,8 +1549,12 @@ class App(ctk.CTk):
         self._file_label.configure(text=path.name)
         self._master_btn.configure(state="normal")
         self._master_split_btn.configure(state="normal")
+        self._settings["last_input_file"] = str(path)
+        self._settings["last_input_folder"] = str(path.parent)
+        self._save_settings()
         self._tabview.set("Single File")
         self._set_status("File loaded. Click Analyse to inspect it.", "normal")
+        self._trigger_preview(str(path))
 
 
 if __name__ == "__main__":

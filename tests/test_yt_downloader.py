@@ -1,9 +1,15 @@
 from __future__ import annotations
+
 import sys
 from pathlib import Path
 from unittest.mock import patch
+
 from youtube_import.models import DownloadJob, DownloadResult
-from youtube_import.downloader import find_ytdlp
+from youtube_import.downloader import (
+    find_ytdlp,
+    parse_progress_line,
+    parse_destination_line,
+)
 
 
 def test_download_result_defaults():
@@ -19,9 +25,6 @@ def test_find_ytdlp_missing():
         with patch.object(sys, "frozen", False, create=True):
             result = find_ytdlp()
     assert result is None
-
-
-from youtube_import.downloader import parse_progress_line
 
 
 def test_parse_progress_download():
@@ -47,9 +50,6 @@ def test_parse_progress_irrelevant_line():
 def test_parse_progress_100_percent():
     result = parse_progress_line("[download] 100% of 5.00MiB")
     assert result == ("downloading", 1.0)
-
-
-from youtube_import.downloader import parse_destination_line
 
 
 def test_parse_destination_line_valid():
