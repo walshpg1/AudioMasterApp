@@ -36,7 +36,7 @@ def _defaults() -> dict:
     return {
         "last_input_file": None,
         "last_input_folder": None,
-        "last_output_folder": r"D:\AIStudio\Outputs\audio\mastered",
+        "last_output_folder": None,
         "last_selected_preset": None,
         "last_selected_export_format": DEFAULT_FORMAT.name,
         "resolve_import_enabled": False,
