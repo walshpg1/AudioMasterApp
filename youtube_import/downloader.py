@@ -74,6 +74,7 @@ class YoutubeDownloader:
             "--output", str(job.output_dir / "%(title)s.%(ext)s"),
             "--no-playlist",
             "--progress",
+            "--newline",
             job.url,
         ]
         logger.info("[yt-dlp cmd] %s", " ".join(cmd))

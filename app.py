@@ -1550,6 +1550,7 @@ class App(ctk.CTk):
         self._master_btn.configure(state="normal")
         self._master_split_btn.configure(state="normal")
         self._tabview.set("Single File")
+        self._set_status("File loaded. Click Analyse to inspect it.", "normal")
 
 
 if __name__ == "__main__":

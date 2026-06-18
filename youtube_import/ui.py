@@ -192,6 +192,8 @@ class YouTubeImportTab:
         else:  # DOWNLOADING / CONVERTING
             if not self._progress_bar.winfo_ismapped():
                 self._progress_bar.pack(fill="x")
+            self._progress_bar.configure(mode="indeterminate")
+            self._progress_bar.start()
 
         if state == _COMPLETE:
             self._load_btn.pack(side="left", padx=(8, 0))
