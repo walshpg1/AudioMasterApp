@@ -27,7 +27,25 @@ class AudioPlayer:
         self._play_start: float = 0.0
         self._lock = threading.Lock()
 
+    # ------------------------------------------------------------------
+    # Public state queries
+    # ------------------------------------------------------------------
+
+    @property
+    def is_available(self) -> bool:
+        return self._available
+
+    @property
+    def is_loaded(self) -> bool:
+        with self._lock:
+            return self._data is not None
+
+    # ------------------------------------------------------------------
+    # Load / playback
+    # ------------------------------------------------------------------
+
     def load(self, path: Path) -> None:
+        """Load audio file for playback. Raises on decode failure."""
         if not self._available:
             return
         try:
@@ -39,6 +57,7 @@ class AudioPlayer:
                 self._seek_offset = 0.0
         except Exception as exc:
             logger.warning("Could not load %s for playback: %s", path.name, exc)
+            raise
 
     def seek(self, seconds: float) -> None:
         if not self._available or self._data is None:
@@ -51,19 +70,32 @@ class AudioPlayer:
             self._seek_offset = seconds
             self._play_start = time.time()
             self._playing = True
-        sd.play(clip, self._sr)
+        try:
+            sd.play(clip, self._sr)
+        except Exception:
+            with self._lock:
+                self._playing = False
+            raise
         threading.Thread(target=self._monitor, daemon=True).start()
 
     def play(self) -> None:
+        """Start playback from current seek position."""
         if not self._available or self._data is None:
             return
         import sounddevice as sd
         sd.stop()
         with self._lock:
-            self._seek_offset = 0.0
+            offset = self._seek_offset
+            start = int(offset * self._sr)
+            clip = self._data[max(0, start):]
             self._play_start = time.time()
             self._playing = True
-        sd.play(self._data, self._sr)
+        try:
+            sd.play(clip, self._sr)
+        except Exception:
+            with self._lock:
+                self._playing = False
+            raise
         threading.Thread(target=self._monitor, daemon=True).start()
 
     def pause(self) -> None:
@@ -86,8 +118,23 @@ class AudioPlayer:
             clip = self._data[max(0, start):]
             self._play_start = time.time()
             self._playing = True
-        sd.play(clip, self._sr)
+        try:
+            sd.play(clip, self._sr)
+        except Exception:
+            with self._lock:
+                self._playing = False
+            raise
         threading.Thread(target=self._monitor, daemon=True).start()
+
+    def set_position(self, seconds: float) -> None:
+        """Move the playback cursor without starting playback."""
+        if not self._available or self._data is None:
+            return
+        import sounddevice as sd
+        sd.stop()
+        with self._lock:
+            self._playing = False
+            self._seek_offset = max(0.0, seconds)
 
     def stop(self) -> None:
         if not self._available:
