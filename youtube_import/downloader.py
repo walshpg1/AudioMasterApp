@@ -28,8 +28,6 @@ def find_ytdlp() -> str | None:
 
 def parse_progress_line(line: str) -> tuple[str, float | None] | None:
     """
-    Parse yt-dlp progress lines.
-
     "[download]  47.3% ..."  -> ("downloading", 0.473)
     "[ffmpeg] ..."           -> ("converting", None)
     "[ExtractAudio] ..."     -> ("converting", None)
@@ -47,13 +45,28 @@ def parse_progress_line(line: str) -> tuple[str, float | None] | None:
 
 def parse_destination_line(line: str) -> Path | None:
     """
-    "[ExtractAudio] Destination: D:\\path\\to\\song.mp3" -> Path(...)
-    anything else -> None
+    "[ExtractAudio] Destination: D:\\path\\song.mp3" -> Path(...)
+    "[download] Destination: D:\\path\\song.mp3"     -> Path(...)  (direct-audio fallback)
+    anything else                                    -> None
+
+    Both prefixes are checked; the caller keeps the last non-None result so that
+    [ExtractAudio] (which appears after [download]) naturally wins when both are present.
     """
     stripped = line.strip()
-    prefix = "[ExtractAudio] Destination: "
-    if stripped.startswith(prefix):
-        return Path(stripped[len(prefix):])
+    for prefix in ("[ExtractAudio] Destination: ", "[download] Destination: "):
+        if stripped.startswith(prefix):
+            return Path(stripped[len(prefix):])
+    return None
+
+
+def _extract_stderr_error(stderr_lines: list[str]) -> str | None:
+    """Return the first genuine ERROR: line from yt-dlp stderr, or None.
+
+    Warnings (e.g. version-age notices) are not errors and are ignored here.
+    """
+    for line in stderr_lines:
+        if line.strip().upper().startswith("ERROR:"):
+            return line.strip()
     return None
 
 
@@ -91,11 +104,24 @@ class YoutubeDownloader:
                 text=True,
             )
 
+            # Signal UI immediately so "Downloading…" appears before first stdout line
+            progress_cb("downloading", None)
+
             # Drain stderr concurrently to prevent pipe buffer deadlock
             stderr_lines: list[str] = []
+
             def _drain_stderr() -> None:
                 for line in proc.stderr:
-                    stderr_lines.append(line.rstrip("\n"))
+                    stripped = line.rstrip("\n")
+                    stderr_lines.append(stripped)
+                    s = stripped.strip()
+                    if s.upper().startswith("ERROR:"):
+                        logger.error("[yt-dlp err] %s", stripped)
+                    elif s.upper().startswith("WARNING:"):
+                        logger.warning("[yt-dlp err] %s", stripped)
+                    else:
+                        logger.debug("[yt-dlp err] %s", stripped)
+
             stderr_thread = threading.Thread(target=_drain_stderr, daemon=True)
             stderr_thread.start()
 
@@ -129,22 +155,31 @@ class YoutubeDownloader:
 
             stderr_thread.join()
             proc.wait()
-            stderr_output = "\n".join(stderr_lines)
-            for err_line in stderr_lines:
-                logger.debug("[yt-dlp err] %s", err_line)
 
-            logger.info("[yt-dlp done] returncode=%d output_path=%s", proc.returncode, output_path)
+            logger.info(
+                "[yt-dlp done] returncode=%d  stdout_lines=%d  stderr_lines=%d  output_path=%s",
+                proc.returncode, len(log_lines), len(stderr_lines), output_path,
+            )
 
-            if proc.returncode == 0 and output_path and output_path.exists():
+            stderr_error = _extract_stderr_error(stderr_lines)
+
+            if proc.returncode == 0 and output_path and output_path.exists() and stderr_error is None:
                 done_cb(DownloadResult(
                     success=True, output_path=output_path,
                     error=None, log_lines=log_lines,
                 ))
             else:
-                error_msg = stderr_output.strip() or f"yt-dlp exited with code {proc.returncode}"
+                if stderr_error:
+                    error_msg = stderr_error[:200]
+                elif proc.returncode != 0:
+                    error_msg = f"yt-dlp exited with code {proc.returncode}"
+                elif output_path is None:
+                    error_msg = "Output file path not detected in yt-dlp output"
+                else:
+                    error_msg = f"Output file not found: {output_path}"
                 done_cb(DownloadResult(
                     success=False, output_path=None,
-                    error=error_msg[:200], log_lines=log_lines,
+                    error=error_msg, log_lines=log_lines,
                 ))
 
         except Exception as exc:

@@ -58,6 +58,12 @@ def test_parse_destination_line_valid():
     assert result == Path(r"D:\AIStudio\Outputs\audio\downloads\my track.mp3")
 
 
+def test_parse_destination_line_download_prefix():
+    line = r"[download] Destination: D:\AIStudio\Outputs\audio\downloads\my track.mp3"
+    result = parse_destination_line(line)
+    assert result == Path(r"D:\AIStudio\Outputs\audio\downloads\my track.mp3")
+
+
 def test_parse_destination_line_irrelevant():
     result = parse_destination_line("[download]  47.3% of ~5.00MiB")
     assert result is None
