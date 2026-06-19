@@ -4,6 +4,7 @@ import subprocess
 from typing import Callable
 
 from pipeline.models import MuxJob, MuxResult
+from ffmpeg_utils import CREATE_NO_WINDOW_FLAG
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ def run_mux(
     """Run FFmpeg mux in the calling thread. Calls on_done exactly once."""
     cmd = build_mux_command(job, ffmpeg_path)
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_MUX_TIMEOUT)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=_MUX_TIMEOUT, creationflags=CREATE_NO_WINDOW_FLAG)
         if proc.returncode == 0:
             on_done(MuxResult(job=job, success=True, ffmpeg_cmd=cmd))
         else:

@@ -2,15 +2,22 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 from export_formats import ExportFormat, DEFAULT_FORMAT
+from ffmpeg_utils import find_ffmpeg, CREATE_NO_WINDOW_FLAG
 
 logger = logging.getLogger(__name__)
 
-PRESETS_DIR = Path(__file__).parent / "presets"
+# In a PyInstaller bundle, read-only resources live in sys._MEIPASS.
+if getattr(sys, "frozen", False):
+    PRESETS_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "presets"
+else:
+    PRESETS_DIR = Path(__file__).parent / "presets"
+
 OUTPUT_DIR = Path(__file__).parent / "output"
 
 REQUIRED_PRESET_FIELDS = {"name", "slug", "target_lufs", "true_peak_ceiling", "compress"}
@@ -21,6 +28,7 @@ class MasterResult:
     output_path: Optional[str]
     preset_name: str
     pass1_lufs: Optional[float]
+    pass1_stats: Optional[dict] = None
     error: Optional[str] = None
 
 
@@ -88,13 +96,15 @@ def master(
         / f"{input_path.stem}_mastered_{slug}_{export_fmt.slug}.{export_fmt.extension}"
     )
 
+    ffmpeg = find_ffmpeg() or "ffmpeg"
+
     # Pass 1: measure integrated loudness
     p1_cmd = [
-        "ffmpeg", "-y", "-i", str(input_path),
+        ffmpeg, "-y", "-i", str(input_path),
         "-af", f"loudnorm=I={target_lufs}:TP={true_peak}:LRA=11:print_format=json",
         "-f", "null", "-",
     ]
-    p1 = subprocess.run(p1_cmd, capture_output=True, text=True)
+    p1 = subprocess.run(p1_cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW_FLAG)
     if p1.returncode != 0:
         logger.error("FFmpeg Pass 1 failed: %s", p1.stderr[-800:])
         return MasterResult(
@@ -141,20 +151,21 @@ def master(
 
     # Pass 2: apply loudnorm + encode to target format
     p2_cmd = [
-        "ffmpeg", "-y", "-i", str(input_path),
+        ffmpeg, "-y", "-i", str(input_path),
         "-af", af,
         "-ar", str(export_fmt.sample_rate),
         "-c:a", export_fmt.ffmpeg_codec,
         *export_fmt.ffmpeg_extra,
         str(output_path),
     ]
-    p2 = subprocess.run(p2_cmd, capture_output=True, text=True)
+    p2 = subprocess.run(p2_cmd, capture_output=True, text=True, creationflags=CREATE_NO_WINDOW_FLAG)
     if p2.returncode != 0:
         logger.error("FFmpeg Pass 2 failed: %s", p2.stderr[-800:])
         return MasterResult(
             output_path=None,
             preset_name=preset_name,
             pass1_lufs=pass1_lufs,
+            pass1_stats=measured,
             error=f"FFmpeg Pass 2 failed: {p2.stderr[-400:]}",
         )
 
@@ -162,6 +173,7 @@ def master(
         output_path=str(output_path),
         preset_name=preset_name,
         pass1_lufs=pass1_lufs,
+        pass1_stats=measured,
     )
 
 

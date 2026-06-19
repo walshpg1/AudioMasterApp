@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Callable
 
 from youtube_import.models import DownloadJob, DownloadResult
+from ffmpeg_utils import CREATE_NO_WINDOW_FLAG
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ class YoutubeDownloader:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                creationflags=CREATE_NO_WINDOW_FLAG,
             )
 
             # Signal UI immediately so "Downloading…" appears before first stdout line
