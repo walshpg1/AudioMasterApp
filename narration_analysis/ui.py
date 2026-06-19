@@ -12,7 +12,7 @@ import customtkinter as ctk
 from narration_analysis.exporter import _OUTPUT_ROOT, export_all
 from narration_analysis.models import AnalysisResult, Scene
 from narration_analysis.player import AudioPlayer
-from narration_analysis.scene_builder import build_scenes
+from narration_analysis.scene_builder import build_scenes, build_scenes_narrative
 from narration_analysis.transcriber import TranscriptionCancelled, transcribe
 
 logger = logging.getLogger(__name__)
@@ -36,6 +36,7 @@ class NarrationAnalysisTab:
         self._cancel_event = threading.Event()
         self._is_playing = False
         self._model_var = ctk.StringVar(value="small")
+        self._scene_mode_var = ctk.StringVar(value="narrative")
         self._poll_id: str | None = None
         self._build_ui()
         self._poll_playback()
@@ -93,6 +94,17 @@ class NarrationAnalysisTab:
             ctrl_row, text="Analyse", command=self._start_analysis, width=100, state="disabled"
         )
         self._analyse_btn.pack(side="right", padx=8, pady=8)
+
+        # Scene mode toggle (Narrative is default for storyboard generation)
+        mode_row = ctk.CTkFrame(self._parent)
+        mode_row.pack(fill="x", padx=12, pady=(0, 4))
+        ctk.CTkLabel(mode_row, text="Scene Mode:", width=90).pack(side="left", padx=(8, 2), pady=6)
+        ctk.CTkRadioButton(
+            mode_row, text="Narrative", variable=self._scene_mode_var, value="narrative"
+        ).pack(side="left", padx=(4, 12))
+        ctk.CTkRadioButton(
+            mode_row, text="Subtitle", variable=self._scene_mode_var, value="subtitle"
+        ).pack(side="left", padx=4)
 
         self._progress = ctk.CTkProgressBar(self._parent)
         self._progress.pack(fill="x", **pad)
@@ -175,7 +187,8 @@ class NarrationAnalysisTab:
         self._cancel_btn.configure(state="normal")
         self._progress.set(0)
         self._status_lbl.configure(text="Starting transcription...")
-        threading.Thread(target=self._analysis_worker, daemon=True).start()
+        mode = self._scene_mode_var.get()
+        threading.Thread(target=self._analysis_worker, args=(mode,), daemon=True).start()
 
     def _cancel_analysis(self) -> None:
         self._cancel_event.set()
@@ -212,7 +225,7 @@ class NarrationAnalysisTab:
     # Background worker
     # ------------------------------------------------------------------
 
-    def _analysis_worker(self) -> None:
+    def _analysis_worker(self, mode: str) -> None:
         try:
             path = self._audio_path
             project_name = _make_project_name(path.stem)
@@ -224,7 +237,10 @@ class NarrationAnalysisTab:
                 lambda f: self._root.after(0, self._update_progress, f),
                 self._cancel_event,
             )
-            scenes = build_scenes(segments)
+            scenes = (
+                build_scenes_narrative(segments) if mode == "narrative"
+                else build_scenes(segments)
+            )
             result = AnalysisResult(
                 source_path=path,
                 project_name=project_name,
