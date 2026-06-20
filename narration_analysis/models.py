@@ -1,5 +1,5 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -16,6 +16,17 @@ class Scene:
     start: float
     end: float
     text: str
+
+
+@dataclass
+class SceneEdit:
+    """Working correction layer for a single scene. Never modifies the source Scene."""
+    scene_number: int
+    original_narration: str   # Whisper text — read-only reference
+    narration: str            # working/corrected text; starts equal to original
+    visual_prompt: str = ""
+    status: str = "pending"
+    edited: bool = False      # True when narration differs from original or visual_prompt is set
 
 
 @dataclass

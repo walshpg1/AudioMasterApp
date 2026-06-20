@@ -2,7 +2,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from narration_analysis.models import AnalysisResult, Scene, TranscriptSegment
+from narration_analysis.models import AnalysisResult, Scene, SceneEdit, TranscriptSegment
 
 _OUTPUT_ROOT = Path(r"D:\AIStudio\Outputs\narration_analysis")
 _SUBFOLDERS = ("transcripts", "srt", "vtt", "json", "storyboards")
@@ -105,6 +105,122 @@ def _write_storyboard(output_dir: Path, result: AnalysisResult) -> Path:
     }
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
     return path
+
+
+def _write_corrected_txt(output_dir: Path, stem: str, corrected_transcript: str) -> Path:
+    path = output_dir / "transcripts" / f"{stem}_corrected.txt"
+    path.write_text(corrected_transcript, encoding="utf-8")
+    return path
+
+
+def _write_corrected_scene_list(
+    output_dir: Path,
+    stem: str,
+    scenes: list[Scene],
+    edits: dict[int, SceneEdit],
+) -> Path:
+    path = output_dir / "json" / f"{stem}_scene_list_corrected.json"
+    data = []
+    for sc in scenes:
+        edit = edits.get(sc.scene_number)
+        data.append({
+            "scene": sc.scene_number,
+            "start": sc.start,
+            "end": sc.end,
+            "start_tc": _fmt_tc(sc.start),
+            "end_tc": _fmt_tc(sc.end),
+            "original_narration": edit.original_narration if edit else sc.text,
+            "narration": edit.narration if edit else sc.text,
+            "edited": edit.edited if edit else False,
+        })
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def _write_corrected_storyboard(
+    output_dir: Path,
+    result: AnalysisResult,
+    edits: dict[int, SceneEdit],
+) -> Path:
+    path = output_dir / "storyboards" / "storyboard_corrected.json"
+    scenes = []
+    for sc in result.scenes:
+        edit = edits.get(sc.scene_number)
+        scenes.append({
+            "scene_number": sc.scene_number,
+            "start": sc.start,
+            "end": sc.end,
+            "duration": round(sc.end - sc.start, 3),
+            "original_narration": edit.original_narration if edit else sc.text,
+            "narration": edit.narration if edit else sc.text,
+            "visual_prompt": edit.visual_prompt if edit else "",
+            "status": edit.status if edit else "pending",
+            "edited": edit.edited if edit else False,
+        })
+    data = {
+        "source": result.source_path.name,
+        "project_name": result.project_name,
+        "duration": result.duration,
+        "scenes": scenes,
+    }
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    return path
+
+
+def export_corrections(
+    result: AnalysisResult,
+    edits: dict[int, SceneEdit],
+    corrected_transcript: str,
+) -> dict[str, Path]:
+    """Write corrected output files. Never touches the original export files."""
+    _ensure_dirs(result.output_dir)
+    stem = result.source_path.stem
+    return {
+        "corrected_txt": _write_corrected_txt(result.output_dir, stem, corrected_transcript),
+        "corrected_scene_list": _write_corrected_scene_list(
+            result.output_dir, stem, result.scenes, edits
+        ),
+        "corrected_storyboard": _write_corrected_storyboard(result.output_dir, result, edits),
+    }
+
+
+def corrected_files_exist(result: AnalysisResult) -> bool:
+    """Return True only when all three corrected files are present on disk."""
+    stem = result.source_path.stem
+    return (
+        (result.output_dir / "transcripts" / f"{stem}_corrected.txt").exists()
+        and (result.output_dir / "storyboards" / "storyboard_corrected.json").exists()
+    )
+
+
+def load_corrections(result: AnalysisResult) -> tuple[str, dict[int, SceneEdit]]:
+    """Read corrected state from disk.
+
+    Uses storyboard_corrected.json as the source of truth for scene edits
+    and <stem>_corrected.txt for the transcript.  Raises on missing or
+    invalid files so the caller can fall back to fresh Whisper output.
+    """
+    stem = result.source_path.stem
+
+    txt_path = result.output_dir / "transcripts" / f"{stem}_corrected.txt"
+    corrected_transcript = txt_path.read_text(encoding="utf-8")
+
+    sb_path = result.output_dir / "storyboards" / "storyboard_corrected.json"
+    data = json.loads(sb_path.read_text(encoding="utf-8"))
+
+    edits: dict[int, SceneEdit] = {}
+    for sc in data["scenes"]:
+        sn = int(sc["scene_number"])
+        edits[sn] = SceneEdit(
+            scene_number=sn,
+            original_narration=sc.get("original_narration", sc.get("narration", "")),
+            narration=sc.get("narration", ""),
+            visual_prompt=sc.get("visual_prompt", ""),
+            status=sc.get("status", "pending"),
+            edited=bool(sc.get("edited", False)),
+        )
+
+    return corrected_transcript, edits
 
 
 def export_all(result: AnalysisResult) -> dict[str, Path]:

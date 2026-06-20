@@ -1,6 +1,6 @@
 from pathlib import Path
 import pytest
-from narration_analysis.models import TranscriptSegment, Scene, AnalysisResult
+from narration_analysis.models import TranscriptSegment, Scene, AnalysisResult, SceneEdit
 
 
 def test_transcript_segment():
@@ -33,3 +33,54 @@ def test_analysis_result_fields():
     assert result.duration == 5.0
     assert len(result.segments) == 1
     assert len(result.scenes) == 1
+
+
+# ---------------------------------------------------------------------------
+# SceneEdit
+# ---------------------------------------------------------------------------
+
+def test_scene_edit_defaults():
+    edit = SceneEdit(scene_number=1, original_narration="Hello.", narration="Hello.")
+    assert edit.visual_prompt == ""
+    assert edit.status == "pending"
+    assert edit.edited is False
+
+
+def test_scene_edit_narration_independent_of_original():
+    edit = SceneEdit(scene_number=2, original_narration="Original text.", narration="Original text.")
+    edit.narration = "Corrected text."
+    assert edit.original_narration == "Original text."
+    assert edit.narration == "Corrected text."
+
+
+def test_scene_edit_edited_flag_not_auto_set():
+    # edited is False by default even if narration differs — caller must set it
+    edit = SceneEdit(scene_number=1, original_narration="A", narration="B")
+    assert edit.edited is False
+
+
+def test_scene_edit_edited_flag_set_explicitly():
+    edit = SceneEdit(scene_number=1, original_narration="A", narration="B", edited=True)
+    assert edit.edited is True
+
+
+def test_scene_edit_with_visual_prompt():
+    edit = SceneEdit(
+        scene_number=3,
+        original_narration="A scene.",
+        narration="A scene.",
+        visual_prompt="Wide shot of mountains at dawn.",
+        edited=True,
+    )
+    assert edit.visual_prompt == "Wide shot of mountains at dawn."
+    assert edit.edited is True
+
+
+def test_scene_edit_status_override():
+    edit = SceneEdit(
+        scene_number=1,
+        original_narration="Hello.",
+        narration="Hello.",
+        status="approved",
+    )
+    assert edit.status == "approved"
